@@ -1,0 +1,18 @@
+{
+  "name": "nexus",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plataforma de chat, voz e video com servidores, amizades e bot integrado",
+  "type": "commonjs",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "socket.io": "^4.7.5"
+  }
+}

@@ -1,0 +1,527 @@
+import { api } from './api.js';
+import { $, el, avatarNode } from './util.js';
+import { state, socket, toast, openGuild, openHome, startDM, refresh } from './app.js';
+
+/* ============================================================ básico ==== */
+
+export function openModal(node) {
+  const modal = $('#modal');
+  modal.replaceChildren(node);
+  $('#modalBackdrop').hidden = false;
+}
+
+export function closeModal() {
+  $('#modalBackdrop').hidden = true;
+  $('#modal').replaceChildren();
+}
+
+const shell = ({ title, subtitle, body, foot, tabs }) => el('div', {},
+  el('div', { class: 'modal-head' }, el('h2', {}, title), subtitle ? el('p', {}, subtitle) : null),
+  tabs || null,
+  el('div', { class: 'modal-body' }, body),
+  foot ? el('div', { class: 'modal-foot' }, foot) : null);
+
+const cancelBtn = () => el('button', { class: 'btn btn-ghost', onclick: closeModal }, 'Cancelar');
+
+const field = (label, input) => el('label', { class: 'field' }, el('span', {}, label), input);
+
+const switchRow = (label, description, value, onChange) => {
+  const toggle = el('div', { class: `switch ${value ? 'on' : ''}` });
+  toggle.addEventListener('click', () => {
+    const next = !toggle.classList.contains('on');
+    toggle.classList.toggle('on', next);
+    onChange(next);
+  });
+  return el('div', { class: 'switch-row' },
+    el('div', { class: 'txt' }, el('strong', {}, label), el('small', {}, description)),
+    toggle);
+};
+
+/* =========================================================== servidor === */
+
+function createGuild() {
+  const input = el('input', { type: 'text', maxlength: 40, placeholder: 'Servidor do Rafa' });
+
+  const submit = async () => {
+    const name = input.value.trim();
+    if (name.length < 2) return toast('Escolha um nome com pelo menos 2 caracteres.', 'err');
+    try {
+      const { guild } = await api.post('/guilds', { name });
+      state.guilds.push(guild);
+      closeModal();
+      openGuild(guild.id);
+      toast(`Servidor "${guild.name}" criado!`, 'ok');
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  };
+
+  input.addEventListener('keydown', (e) => e.key === 'Enter' && submit());
+  setTimeout(() => input.focus(), 50);
+
+  return shell({
+    title: 'Criar um servidor',
+    subtitle: 'Seu servidor já nasce com canais de texto, voz e o bot Nexy pronto para uso.',
+    body: field('Nome do servidor', input),
+    foot: [cancelBtn(), el('button', { class: 'btn btn-primary', onclick: submit }, 'Criar servidor')]
+  });
+}
+
+function joinGuild() {
+  const input = el('input', { type: 'text', placeholder: 'ex: k3npq7ab' });
+
+  const submit = async () => {
+    try {
+      const { guild } = await api.post('/guilds/join', { code: input.value.trim() });
+      state.guilds.push(guild);
+      closeModal();
+      openGuild(guild.id);
+      toast(`Você entrou em "${guild.name}"!`, 'ok');
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  };
+
+  input.addEventListener('keydown', (e) => e.key === 'Enter' && submit());
+  setTimeout(() => input.focus(), 50);
+
+  return shell({
+    title: 'Entrar em um servidor',
+    subtitle: 'Cole abaixo o código de convite que te enviaram.',
+    body: field('Código de convite', input),
+    foot: [cancelBtn(), el('button', { class: 'btn btn-primary', onclick: submit }, 'Entrar')]
+  });
+}
+
+function createChannel(guildId, type = 'text') {
+  const name = el('input', { type: 'text', placeholder: type === 'voice' ? 'Sala de jogos' : 'novo-canal' });
+  const topic = el('input', { type: 'text', placeholder: 'Sobre o que é este canal? (opcional)' });
+  const kind = el('select', {},
+    el('option', { value: 'text' }, '# Canal de texto'),
+    el('option', { value: 'voice' }, '🔊 Canal de voz'));
+  kind.value = type;
+
+  const submit = async () => {
+    if (!name.value.trim()) return toast('Dê um nome ao canal.', 'err');
+    try {
+      await api.post(`/guilds/${guildId}/channels`, {
+        name: name.value.trim(), type: kind.value, topic: topic.value.trim() || null
+      });
+      closeModal();
+      toast('Canal criado!', 'ok');
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  };
+
+  name.addEventListener('keydown', (e) => e.key === 'Enter' && submit());
+  setTimeout(() => name.focus(), 50);
+
+  return shell({
+    title: 'Criar canal',
+    body: [field('Tipo', kind), field('Nome', name), field('Tópico', topic)],
+    foot: [cancelBtn(), el('button', { class: 'btn btn-primary', onclick: submit }, 'Criar canal')]
+  });
+}
+
+function guildMenu(guild) {
+  if (!guild) return el('div', {});
+  const isOwner = guild.myRole === 'owner';
+  const isAdmin = ['owner', 'admin'].includes(guild.myRole);
+
+  const item = (icon, label, onclick, danger = false) => el('button', {
+    class: 'channel',
+    style: danger ? 'color:var(--red)' : '',
+    onclick
+  }, el('span', { class: 'glyph' }, icon), el('span', { class: 'name' }, label));
+
+  return shell({
+    title: guild.name,
+    subtitle: `${guild.members.length} membros · você é ${guild.myRole}`,
+    body: el('div', {},
+      item('🔗', 'Convidar pessoas', () => openModal(invite(guild))),
+      isAdmin ? item('⚙️', 'Configurações do servidor', () => openModal(guildSettings(guild))) : null,
+      isAdmin ? item('🤖', 'Painel do bot Nexy', () => openModal(botPanel(guild))) : null,
+      isAdmin ? item('➕', 'Criar canal', () => openModal(createChannel(guild.id))) : null,
+      !isOwner ? item('🚪', 'Sair do servidor', async () => {
+        if (!confirm(`Sair de "${guild.name}"?`)) return;
+        await api.del(`/guilds/${guild.id}/leave`);
+        state.guilds = state.guilds.filter((g) => g.id !== guild.id);
+        closeModal();
+        openHome();
+        refresh.rail();
+      }, true) : null,
+      isOwner ? item('🗑️', 'Excluir servidor', async () => {
+        if (!confirm(`Excluir "${guild.name}" para sempre? Isso apaga todos os canais e mensagens.`)) return;
+        await api.del(`/guilds/${guild.id}`);
+        state.guilds = state.guilds.filter((g) => g.id !== guild.id);
+        closeModal();
+        openHome();
+        refresh.rail();
+      }, true) : null),
+    foot: [el('button', { class: 'btn btn-ghost', onclick: closeModal }, 'Fechar')]
+  });
+}
+
+function invite(guild) {
+  const input = el('input', { type: 'text', value: guild.inviteCode, readonly: true });
+  const link = `${location.origin}/?convite=${guild.inviteCode}`;
+
+  return shell({
+    title: 'Convidar para o servidor',
+    subtitle: 'Compartilhe o código ou o link abaixo. Quem tiver ele entra na hora.',
+    body: el('div', {},
+      el('div', { class: 'invite-box' },
+        input,
+        el('button', {
+          class: 'btn btn-primary',
+          onclick: async () => {
+            await navigator.clipboard.writeText(guild.inviteCode).catch(() => {});
+            toast('Código copiado!', 'ok');
+          }
+        }, 'Copiar')),
+      el('p', { style: 'margin-top:14px;font-size:12px;color:var(--text-mute)' }, 'Link direto:'),
+      el('div', { class: 'invite-box', style: 'margin-top:6px' },
+        el('input', { type: 'text', value: link, readonly: true }),
+        el('button', {
+          class: 'btn btn-ghost',
+          onclick: async () => {
+            await navigator.clipboard.writeText(link).catch(() => {});
+            toast('Link copiado!', 'ok');
+          }
+        }, 'Copiar'))),
+    foot: [el('button', { class: 'btn btn-ghost', onclick: closeModal }, 'Fechar')]
+  });
+}
+
+/* ================================================== configurações guild = */
+
+function guildSettings(guild) {
+  const settings = { ...guild.settings };
+  const textChannels = guild.channels.filter((c) => c.type === 'text');
+
+  const channelSelect = (value) => {
+    const select = el('select', {}, el('option', { value: '' }, '— nenhum —'),
+      textChannels.map((c) => el('option', { value: c.id }, `# ${c.name}`)));
+    select.value = value || '';
+    return select;
+  };
+
+  const prefix = el('input', { type: 'text', maxlength: 3, value: settings.prefix });
+  const welcomeChannel = channelSelect(settings.welcome_channel_id);
+  const welcomeMessage = el('input', { type: 'text', value: settings.welcome_message || '' });
+  const goodbyeMessage = el('input', { type: 'text', value: settings.goodbye_message || '' });
+  const logChannel = channelSelect(settings.log_channel_id);
+  const levelupMessage = el('input', { type: 'text', value: settings.levelup_message || '' });
+  const badWords = el('input', { type: 'text', value: settings.automod_words || '', placeholder: 'palavra1, palavra2' });
+
+  const flags = {
+    levels_enabled: settings.levels_enabled,
+    economy_enabled: settings.economy_enabled,
+    automod_spam: settings.automod_spam,
+    automod_links: settings.automod_links,
+    automod_caps: settings.automod_caps
+  };
+
+  const save = async () => {
+    try {
+      const { settings: updated } = await api.patch(`/guilds/${guild.id}/settings`, {
+        prefix: prefix.value.trim() || '!',
+        welcome_channel_id: welcomeChannel.value || null,
+        welcome_message: welcomeMessage.value,
+        goodbye_message: goodbyeMessage.value,
+        log_channel_id: logChannel.value || null,
+        levelup_message: levelupMessage.value,
+        automod_words: badWords.value,
+        ...Object.fromEntries(Object.entries(flags).map(([k, v]) => [k, v ? 1 : 0]))
+      });
+      guild.settings = updated;
+      closeModal();
+      toast('Configurações salvas!', 'ok');
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  };
+
+  return shell({
+    title: `Configurações · ${guild.name}`,
+    subtitle: 'Tudo que o Nexy faz neste servidor é ajustado aqui.',
+    body: el('div', {},
+      el('h4', { style: 'margin:4px 0 10px;color:var(--brand-2);font-size:12px;text-transform:uppercase' }, 'Bot'),
+      field('Prefixo dos comandos', prefix),
+      switchRow('Sistema de níveis', 'Ganha XP conversando e sobe de nível', flags.levels_enabled, (v) => { flags.levels_enabled = v; }),
+      field('Mensagem de level up', levelupMessage),
+      switchRow('Economia', 'Moedas, loja, apostas e ranking', flags.economy_enabled, (v) => { flags.economy_enabled = v; }),
+
+      el('h4', { style: 'margin:22px 0 10px;color:var(--brand-2);font-size:12px;text-transform:uppercase' }, 'Boas-vindas e logs'),
+      field('Canal de boas-vindas', welcomeChannel),
+      field('Mensagem de entrada', welcomeMessage),
+      field('Mensagem de saída', goodbyeMessage),
+      field('Canal de logs de moderação', logChannel),
+      el('p', { style: 'font-size:12px;color:var(--text-mute);margin-top:-8px' },
+        'Variáveis: {user}, {server}, {count}, {level}'),
+
+      el('h4', { style: 'margin:22px 0 10px;color:var(--brand-2);font-size:12px;text-transform:uppercase' }, 'Auto-moderação'),
+      switchRow('Anti-spam', 'Silencia quem manda mensagens em sequência', flags.automod_spam, (v) => { flags.automod_spam = v; }),
+      switchRow('Bloquear links', 'Apaga mensagens com links de não-moderadores', flags.automod_links, (v) => { flags.automod_links = v; }),
+      switchRow('Bloquear CAPS', 'Apaga mensagens gritadas', flags.automod_caps, (v) => { flags.automod_caps = v; }),
+      field('Palavras bloqueadas (separadas por vírgula)', badWords)),
+    foot: [cancelBtn(), el('button', { class: 'btn btn-primary', onclick: save }, 'Salvar')]
+  });
+}
+
+/* ========================================================== painel bot == */
+
+function botPanel(guild) {
+  if (!guild) return el('div', {});
+  const botMember = guild.members.find((m) => m.isBot);
+  const isAdmin = ['owner', 'admin'].includes(guild.myRole);
+  const prefix = guild.settings?.prefix || '!';
+
+  const byCategory = new Map();
+  for (const cmd of state.botCommands) {
+    if (!byCategory.has(cmd.category)) byCategory.set(cmd.category, []);
+    byCategory.get(cmd.category).push(cmd);
+  }
+
+  const body = el('div', {});
+
+  body.append(el('div', { class: 'switch-row', style: 'padding-bottom:16px' },
+    el('div', { style: 'display:flex;gap:12px;align-items:center' },
+      avatarNode(state.botUser, { size: 44, status: false }),
+      el('div', {},
+        el('strong', {}, 'Nexy'),
+        el('div', { style: 'font-size:12px;color:var(--text-mute)' },
+          botMember ? `Ativo neste servidor · prefixo ${prefix}` : 'Ainda não está neste servidor'))),
+    isAdmin ? el('button', {
+      class: `btn ${botMember ? 'btn-ghost' : 'btn-primary'}`,
+      onclick: async () => {
+        try {
+          const { members } = await api.post(`/guilds/${guild.id}/bot`, { enable: !botMember });
+          guild.members = members;
+          closeModal();
+          refresh.members();
+          toast(botMember ? 'Nexy saiu do servidor.' : 'Nexy entrou no servidor!', 'ok');
+        } catch (err) {
+          toast(err.message, 'err');
+        }
+      }
+    }, botMember ? 'Remover bot' : 'Adicionar ao servidor') : null));
+
+  body.append(el('p', { style: 'font-size:13px;color:var(--text-dim);margin:14px 0' },
+    `São ${state.botCommands.length} comandos. Use `,
+    el('code', { style: 'background:var(--bg-0);padding:2px 6px;border-radius:5px' }, `${prefix}ajuda`),
+    ' em qualquer canal.'));
+
+  for (const [category, commands] of byCategory) {
+    body.append(el('div', { class: 'cmd-group' },
+      el('h4', {}, category),
+      commands.sort((a, b) => a.name.localeCompare(b.name)).map((cmd) =>
+        el('div', { class: 'cmd' },
+          el('code', {}, `${prefix}${cmd.usage}`),
+          el('span', {}, cmd.description, cmd.permission ? ` · requer ${cmd.permission}` : '')))));
+  }
+
+  return shell({
+    title: '🤖 Nexy — bot integrado',
+    subtitle: 'Moderação, economia, níveis, música e diversão, tudo embutido no app.',
+    body,
+    foot: [
+      isAdmin ? el('button', { class: 'btn btn-ghost', onclick: () => openModal(guildSettings(guild)) }, 'Configurar') : null,
+      el('button', { class: 'btn btn-primary', onclick: closeModal }, 'Fechar')
+    ].filter(Boolean)
+  });
+}
+
+/* ========================================================= usuário ====== */
+
+function userSettings() {
+  const colors = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#00b0f4', '#9b59b6', '#1abc9c', '#e67e22'];
+  const custom = el('input', { type: 'text', maxlength: 60, value: state.me.customStatus || '', placeholder: 'Jogando alguma coisa...' });
+  const bio = el('textarea', { rows: 3, maxlength: 200, placeholder: 'Fale um pouco sobre você' });
+  bio.value = state.me.bio || '';
+
+  let color = state.me.avatarColor;
+  const swatches = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
+    colors.map((c) => {
+      const dot = el('button', {
+        style: `width:34px;height:34px;border-radius:50%;background:${c};border:3px solid ${c === color ? '#fff' : 'transparent'}`,
+        onclick: () => {
+          color = c;
+          for (const node of swatches.children) node.style.borderColor = 'transparent';
+          dot.style.borderColor = '#fff';
+        }
+      });
+      return dot;
+    }));
+
+  const statusSelect = el('select', {},
+    el('option', { value: 'online' }, '🟢 Online'),
+    el('option', { value: 'idle' }, '🟡 Ausente'),
+    el('option', { value: 'dnd' }, '🔴 Não perturbe'),
+    el('option', { value: 'invisible' }, '⚫ Invisível'));
+  statusSelect.value = state.me.status === 'offline' ? 'online' : state.me.status;
+
+  const save = async () => {
+    try {
+      const { user } = await api.patch('/me', {
+        avatarColor: color,
+        customStatus: custom.value.trim() || null,
+        bio: bio.value.trim() || null
+      });
+      state.me = user;
+      socket.emit('presence:update', { status: statusSelect.value });
+      state.me.status = statusSelect.value;
+      refresh.me();
+      closeModal();
+      toast('Perfil atualizado!', 'ok');
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  };
+
+  return shell({
+    title: 'Meu perfil',
+    subtitle: `${state.me.username}#${state.me.tag}`,
+    body: el('div', {},
+      el('div', { style: 'display:flex;gap:14px;align-items:center;margin-bottom:18px' },
+        avatarNode(state.me, { size: 64, status: false }),
+        el('div', {},
+          el('strong', { style: 'font-size:17px' }, state.me.username),
+          el('div', { style: 'font-size:12px;color:var(--text-mute)' },
+            `Seu identificador: ${state.me.username}#${state.me.tag}`))),
+      field('Cor do avatar', swatches),
+      field('Status', statusSelect),
+      field('Status personalizado', custom),
+      field('Sobre mim', bio)),
+    foot: [
+      el('button', {
+        class: 'btn btn-danger',
+        onclick: () => { localStorage.removeItem('nexus.token'); location.reload(); }
+      }, 'Sair da conta'),
+      cancelBtn(),
+      el('button', { class: 'btn btn-primary', onclick: save }, 'Salvar')
+    ]
+  });
+}
+
+function addFriend() {
+  const input = el('input', { type: 'text', placeholder: 'usuario#0000' });
+  const results = el('div', { style: 'margin-top:14px' });
+
+  const send = async (handle) => {
+    try {
+      const data = await api.post('/friends/request', { handle });
+      toast(data.status === 'accepted'
+        ? `Vocês agora são amigos!`
+        : `Pedido enviado para ${data.user.username}.`, 'ok');
+      closeModal();
+      refresh.friends();
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  };
+
+  let timer;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const query = input.value.trim();
+    if (query.length < 2) return results.replaceChildren();
+    timer = setTimeout(async () => {
+      const { users } = await api.get(`/users/search?q=${encodeURIComponent(query)}`);
+      results.replaceChildren(...users.map((user) => el('div', { class: 'friend-row' },
+        avatarNode(user, { size: 32 }),
+        el('div', { class: 'meta' },
+          el('div', { class: 'nm' }, `${user.username}#${user.tag}`),
+          el('div', { class: 'sub' }, user.customStatus || '')),
+        el('button', { class: 'btn btn-primary', onclick: () => send(user.handle) }, 'Adicionar'))));
+    }, 250);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); send(input.value.trim()); }
+  });
+  setTimeout(() => input.focus(), 50);
+
+  return shell({
+    title: 'Adicionar amigo',
+    subtitle: 'Digite o nome de usuário completo, com a tag de 4 dígitos.',
+    body: el('div', {}, field('Nome de usuário', input), results),
+    foot: [cancelBtn(), el('button', { class: 'btn btn-primary', onclick: () => send(input.value.trim()) }, 'Enviar pedido')]
+  });
+}
+
+function userCard(member, guild) {
+  const isMe = member.id === state.me.id;
+  const myRank = { owner: 3, admin: 2, mod: 1, member: 0 }[guild.myRole] ?? 0;
+  const theirRank = { owner: 3, admin: 2, mod: 1, member: 0 }[member.role] ?? 0;
+  const canModerate = !isMe && !member.isBot && myRank > theirRank && myRank >= 1;
+
+  const friendship = state.friends.friends.some((f) => f.id === member.id);
+
+  const act = async (fn, successMessage) => {
+    try {
+      await fn();
+      if (successMessage) toast(successMessage, 'ok');
+      closeModal();
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  };
+
+  const moderationButtons = canModerate ? el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:16px' },
+    myRank >= 2 ? el('button', {
+      class: 'btn btn-ghost',
+      onclick: () => sendBotCommand(`promover ${member.username} ${member.role === 'member' ? 'mod' : 'admin'}`)
+    }, '⬆️ Promover') : null,
+    myRank >= 2 && member.role !== 'member' ? el('button', {
+      class: 'btn btn-ghost', onclick: () => sendBotCommand(`rebaixar ${member.username}`)
+    }, '⬇️ Rebaixar') : null,
+    el('button', { class: 'btn btn-ghost', onclick: () => sendBotCommand(`mute ${member.username} 10m`) }, '🔇 Silenciar 10m'),
+    el('button', { class: 'btn btn-ghost', onclick: () => sendBotCommand(`warn ${member.username} comportamento`) }, '⚠️ Advertir'),
+    el('button', { class: 'btn btn-danger', onclick: () => sendBotCommand(`kick ${member.username}`) }, '👢 Expulsar'),
+    myRank >= 2 ? el('button', { class: 'btn btn-danger', onclick: () => sendBotCommand(`ban ${member.username}`) }, '🔨 Banir') : null
+  ) : null;
+
+  return shell({
+    title: member.displayName,
+    subtitle: `${member.username}#${member.tag}${member.isBot ? ' · BOT' : ''}`,
+    body: el('div', {},
+      el('div', { style: 'display:flex;gap:16px;align-items:center;margin-bottom:16px' },
+        avatarNode(member, { size: 72 }),
+        el('div', {},
+          el('div', { style: 'font-size:13px;color:var(--text-dim)' }, member.customStatus || ''),
+          el('div', { style: 'display:flex;gap:14px;margin-top:8px;font-size:13px' },
+            el('span', {}, `📈 Nível ${member.level}`),
+            el('span', {}, `🪙 ${member.coins.toLocaleString('pt-BR')}`),
+            el('span', {}, `🏷️ ${member.role}`)))),
+      member.bio ? el('p', { style: 'font-size:13px;color:var(--text-dim)' }, member.bio) : null,
+      !isMe && !member.isBot ? el('div', { style: 'display:flex;gap:8px;margin-top:16px;flex-wrap:wrap' },
+        el('button', { class: 'btn btn-primary', onclick: () => act(() => startDM(member.id)) }, '💬 Mensagem'),
+        !friendship ? el('button', {
+          class: 'btn btn-ghost',
+          onclick: () => act(() => api.post('/friends/request', { handle: `${member.username}#${member.tag}` }), 'Pedido enviado!')
+        }, '➕ Adicionar amigo') : null,
+        el('button', {
+          class: 'btn btn-ghost',
+          onclick: () => act(() => api.post(`/friends/${member.id}/block`), 'Usuário bloqueado.')
+        }, '🚫 Bloquear')) : null,
+      moderationButtons),
+    foot: [el('button', { class: 'btn btn-ghost', onclick: closeModal }, 'Fechar')]
+  });
+}
+
+/** Executa um comando do bot como se o usuário tivesse digitado. */
+function sendBotCommand(command) {
+  const guildRef = state.guilds.find((g) => g.id === state.activeGuildId);
+  const prefix = guildRef?.settings?.prefix || '!';
+  socket.emit('message:send', { channelId: state.activeChannelId, content: `${prefix}${command}` }, (response) => {
+    if (!response?.ok) toast(response?.error || 'Falha ao executar', 'err');
+  });
+  closeModal();
+}
+
+export const modals = {
+  createGuild, joinGuild, createChannel, guildMenu, invite,
+  guildSettings, botPanel, userSettings, addFriend, userCard
+};

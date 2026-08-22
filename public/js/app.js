@@ -1054,34 +1054,53 @@ function renderTyping() {
 
 /* =========================================================== membros ==== */
 
+const ROLE_LABEL = { owner: 'Dono', admin: 'Admin', mod: 'Moderador', member: 'Membro' };
+
 function renderMembers() {
   const pane = $('#membersList');
   const g = guild();
   if (!g || state.view !== 'guild' || !state.activeChannelId) return;
 
+  const query = ($('#membersSearch')?.value || '').trim().toLowerCase();
+  const matches = (m) => !query || m.displayName.toLowerCase().includes(query) || m.username.toLowerCase().includes(query);
+
   pane.replaceChildren();
-  const online = g.members.filter((m) => m.status !== 'offline');
-  const offline = g.members.filter((m) => m.status === 'offline');
+  $('#membersCount').textContent = `Membros — ${g.members.length}`;
+
+  const online = g.members.filter((m) => m.status !== 'offline' && matches(m));
+  const offline = g.members.filter((m) => m.status === 'offline' && matches(m));
+
+  const row = (member) => el('button', {
+    class: `member-row ${member.status === 'offline' ? 'offline' : ''}`,
+    onclick: () => openModal(modals.userCard(member, g))
+  },
+    avatarNode(member, { size: 32 }),
+    el('div', { class: 'meta' },
+      el('div', { class: 'nm' }, member.displayName, member.isBot ? el('span', { class: 'bot-badge', style: 'margin-left:6px' }, 'BOT') : null),
+      el('div', { class: 'sub' }, member.customStatus || `Nível ${member.level} · ${member.coins} 🪙`)),
+    member.role !== 'member' ? el('span', { class: `role-tag role-${member.role}` }, ROLE_LABEL[member.role] || member.role) : null);
 
   const group = (label, list) => {
     if (!list.length) return;
     pane.append(el('div', { class: 'side-label' }, el('span', {}, `${label} — ${list.length}`)));
-    for (const member of list) {
-      pane.append(el('button', {
-        class: `member-row ${member.status === 'offline' ? 'offline' : ''}`,
-        onclick: () => openModal(modals.userCard(member, g))
-      },
-        avatarNode(member, { size: 32 }),
-        el('div', { class: 'meta' },
-          el('div', { class: 'nm' }, member.displayName, member.isBot ? el('span', { class: 'bot-badge', style: 'margin-left:6px' }, 'BOT') : null),
-          el('div', { class: 'sub' }, member.customStatus || `Nível ${member.level} · ${member.coins} 🪙`)),
-        member.role !== 'member' ? el('span', { class: `role-tag role-${member.role}` }, member.role) : null));
-    }
+    for (const member of list) pane.append(row(member));
   };
 
-  group('Online', online);
+  // Dentro de "online", donos e admins aparecem primeiro — o resto junto.
+  const byRank = (list) => [...list].sort((a, b) => rankOf(b.role) - rankOf(a.role));
+  const owners = byRank(online.filter((m) => m.role === 'owner' || m.role === 'admin'));
+  const rest = online.filter((m) => m.role !== 'owner' && m.role !== 'admin');
+
+  group('Administração', owners);
+  group('Online', rest);
   group('Offline', offline);
+
+  if (!online.length && !offline.length) {
+    pane.append(el('p', { style: 'padding:16px 8px;color:var(--text-mute);font-size:13px' }, 'Ninguém encontrado.'));
+  }
 }
+
+const rankOf = (role) => ({ owner: 3, admin: 2, mod: 1, member: 0 }[role] || 0);
 
 /* ============================================================== voz ===== */
 
@@ -1302,6 +1321,7 @@ function bindUI() {
   $('#btnUserSettings').addEventListener('click', () => openModal(modals.userSettings()));
   $('#btnSettings').addEventListener('click', () => openModal(modals.userSettings()));
   $('#btnMembers').addEventListener('click', () => { $('#membersPane').hidden = !$('#membersPane').hidden; });
+  $('#membersSearch').addEventListener('input', debounce(renderMembers, 120));
   $('#btnBotPanel').addEventListener('click', () => openModal(modals.botPanel(guild())));
 
   $('#btnMic').addEventListener('click', () => {

@@ -340,14 +340,25 @@ button { background: none; border: 0; cursor: pointer; }
 .composer-row textarea { flex: 1; background: none; border: 0; outline: none; resize: none; padding: 11px 4px; max-height: 200px; line-height: 1.4; }
 
 /* ---------------------------------------------------------- membros ---- */
-.members { width: var(--members-w); background: var(--bg-1); border-left: 1px solid var(--line); overflow-y: auto; padding: 14px 8px; }
-.member-row { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 6px; width: 100%; text-align: left; }
+.members { width: var(--members-w); background: var(--bg-1); border-left: 1px solid var(--line); display: flex; flex-direction: column; }
+.members-head { flex: none; padding: 14px 12px 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.members-head strong { font-size: 13px; color: var(--text-dim); }
+.members-head input {
+  background: var(--bg-0); border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 10px; font-size: 13px; color: var(--text); outline: none;
+}
+.members-head input:focus { border-color: var(--brand); }
+#membersList { flex: 1; overflow-y: auto; padding: 10px 8px; }
+.member-row { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 6px; width: 100%; text-align: left; transition: background .12s; }
 .member-row:hover { background: var(--bg-2); }
 .member-row .meta { min-width: 0; }
 .member-row .nm { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .member-row .sub { font-size: 11px; color: var(--text-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .member-row.offline { opacity: .45; }
-.role-tag { font-size: 10px; padding: 1px 5px; border-radius: 4px; font-weight: 700; margin-left: auto; }
+.role-tag { font-size: 10px; padding: 2px 7px; border-radius: 4px; font-weight: 700; margin-left: auto; text-transform: uppercase; letter-spacing: .03em; }
+.role-tag.role-owner { background: rgba(250,166,26,.16); color: var(--yellow); }
+.role-tag.role-admin { background: rgba(237,66,69,.16); color: var(--red); }
+.role-tag.role-mod { background: rgba(59,165,93,.16); color: var(--green); }
 .role-owner { background: rgba(250,166,26,.18); color: var(--yellow); }
 .role-admin { background: rgba(237,66,69,.16); color: #ff8285; }
 .role-mod { background: rgba(88,101,242,.18); color: var(--brand-2); }

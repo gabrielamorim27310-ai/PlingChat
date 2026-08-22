@@ -5,6 +5,7 @@ const store = require('./store');
 const auth = require('./auth');
 const { all, get, run } = require('./db');
 const botModule = require('./bot');
+const google = require('./google');
 
 const router = express.Router();
 
@@ -26,6 +27,15 @@ router.post('/auth/register', wrap(async (req, res) => {
 router.post('/auth/login', wrap(async (req, res) => {
   res.json(await auth.login(req.body || {}));
 }));
+
+router.post('/auth/google', wrap(async (req, res) => {
+  res.json(await google.loginWithGoogle(req.body?.credential));
+}));
+
+/** Configuracao publica que o front precisa conhecer antes do login. */
+router.get('/config', (req, res) => {
+  res.json({ googleClientId: google.isEnabled() ? google.CLIENT_ID : null });
+});
 
 router.get('/auth/me', auth.requireAuth, (req, res) => {
   res.json({ user: store.publicUser(req.user) });

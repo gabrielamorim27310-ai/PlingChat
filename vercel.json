@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "node scripts/build-web.js",
+  "outputDirectory": "dist",
+  "installCommand": "echo sem dependencias no front",
+  "framework": null,
+  "rewrites": [
+    { "source": "/((?!vendor/|css/|js/|.*\.).*)", "destination": "/index.html" }
+  ]
+}

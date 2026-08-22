@@ -19,9 +19,12 @@ function voiceMembers(channelId) {
   return [...room.values()].map((v) => ({ user: v.user, state: v.state }));
 }
 
-function attachRealtime(server, app) {
+function attachRealtime(server, app, { originAllowed = () => true } = {}) {
   const io = new Server(server, {
-    cors: { origin: true, credentials: true },
+    cors: {
+      origin: (origin, callback) => callback(null, originAllowed(origin)),
+      credentials: true
+    },
     maxHttpBufferSize: 2e6
   });
 

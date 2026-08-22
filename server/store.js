@@ -50,6 +50,7 @@ function createUser({ username, email, passwordHash, isBot = false, id = null })
 
 const getUser = (id) => get('SELECT * FROM users WHERE id = ?', id);
 const getUserByEmail = (email) => get('SELECT * FROM users WHERE email = ?', String(email).toLowerCase());
+const getUserByGoogleSub = (sub) => get('SELECT * FROM users WHERE google_sub = ?', sub);
 
 function getUserByHandle(handle) {
   const m = /^(.+)#(\d{4})$/.exec(String(handle).trim());
@@ -498,7 +499,7 @@ function unreadCounts(userId) {
 
 module.exports = {
   now, pickColor, publicUser, BOT_USER_ID,
-  createUser, getUser, getUserByEmail, getUserByHandle, searchUsers, setStatus, updateProfile,
+  createUser, getUser, getUserByEmail, getUserByGoogleSub, getUserByHandle, searchUsers, setStatus, updateProfile,
   guildPayload, createGuild, getGuild, getGuildByInvite, deleteGuild, listGuildsOfUser,
   addMember, getMember, removeMember, memberCount, listMembers, memberPayload, findMemberByName,
   rank, ROLE_RANK, setRole, isBanned, banMember, unbanMember, listBans,

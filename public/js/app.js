@@ -1,4 +1,5 @@
 import { api, token } from './api.js';
+import { API_BASE } from './config.js';
 import { $, el, avatarNode, renderMarkdown, formatTime, formatDay, dayKey, initials, debounce } from './util.js';
 import { VoiceClient } from './voice.js';
 import { openModal, closeModal, modals } from './modals.js';
@@ -77,6 +78,8 @@ function setupAuth() {
     error.hidden = true;
   });
 
+  setupGoogleAuth().catch(() => { /* SSO opcional */ });
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     error.hidden = true;
@@ -98,6 +101,45 @@ function setupAuth() {
     } finally {
       button.disabled = false;
     }
+  });
+}
+
+/**
+ * Login com Google. O botão só aparece se o backend tiver GOOGLE_CLIENT_ID
+ * configurado — sem isso, o fluxo de e-mail e senha segue sozinho.
+ */
+async function setupGoogleAuth() {
+  const { googleClientId } = await api.get('/config');
+  if (!googleClientId) return;
+
+  await new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.append(script);
+  });
+
+  google.accounts.id.initialize({
+    client_id: googleClientId,
+    callback: async ({ credential }) => {
+      const error = $('#authError');
+      try {
+        const data = await api.post('/auth/google', { credential });
+        token.set(data.token);
+        await start();
+      } catch (err) {
+        error.textContent = err.message;
+        error.hidden = false;
+      }
+    }
+  });
+
+  const holder = $('#googleAuth');
+  holder.hidden = false;
+  google.accounts.id.renderButton(holder.querySelector('#googleButton'), {
+    theme: 'filled_black', size: 'large', width: 340, text: 'continue_with', locale: 'pt-BR'
   });
 }
 
@@ -129,7 +171,7 @@ async function start() {
 }
 
 function connectSocket() {
-  socket = io({ auth: { token: token.get() } });
+  socket = io(API_BASE || undefined, { auth: { token: token.get() } });
   voice = new VoiceClient(socket);
   voice.onUpdate(() => { renderStage(); renderVoicePanel(); syncAudio(); });
 

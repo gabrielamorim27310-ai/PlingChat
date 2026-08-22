@@ -183,6 +183,17 @@ CREATE TABLE IF NOT EXISTS marriages (
 );
 `);
 
+/**
+ * Migracoes aditivas: adiciona colunas que nao existiam em bancos antigos.
+ * Rodar isso sempre e barato e mantem bases criadas antes da mudanca.
+ */
+function ensureColumn(table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!columns.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+ensureColumn('users', 'google_sub', 'TEXT');
+
 /** Gera um id curto ordenavel por tempo, no estilo snowflake. */
 let seq = 0;
 function newId() {

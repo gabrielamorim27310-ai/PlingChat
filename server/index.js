@@ -15,6 +15,30 @@ const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 const app = express();
+
+/**
+ * O front pode ser servido de outro dominio (ex: Vercel) enquanto a API roda
+ * aqui. ALLOWED_ORIGINS aceita uma lista separada por virgula; vazio libera
+ * qualquer origem, o que e adequado para uso local.
+ */
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean);
+
+const originAllowed = (origin) => !ALLOWED_ORIGINS.length || ALLOWED_ORIGINS.includes(origin);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && originAllowed(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
 app.use('/api', api);
@@ -37,7 +61,7 @@ const server = useHttps
   ? https.createServer({ cert: fs.readFileSync(certPath), key: fs.readFileSync(keyPath) }, app)
   : http.createServer(app);
 
-attachRealtime(server, app);
+attachRealtime(server, app, { originAllowed });
 
 function localAddresses() {
   const out = [];

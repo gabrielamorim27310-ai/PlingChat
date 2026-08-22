@@ -1,3 +1,5 @@
+import { API_BASE } from './config.js';
+
 const TOKEN_KEY = 'nexus.token';
 
 export const token = {
@@ -11,7 +13,7 @@ async function request(method, path, body) {
   const jwt = token.get();
   if (jwt) headers.Authorization = `Bearer ${jwt}`;
 
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`${API_BASE}/api${path}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body)

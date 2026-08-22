@@ -1,0 +1,29 @@
+# Backend do Nexus (Socket.IO + SQLite). Precisa de processo persistente e
+# disco montado — por isso nao roda em plataforma serverless.
+services:
+  - type: web
+    name: nexus-api
+    runtime: node
+    # O plano free nao permite disco persistente: o banco seria zerado a cada
+    # deploy. Use "starter" (ou superior) se quiser manter os dados.
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NEXUS_SECRET
+        generateValue: true
+      # Dominio da Vercel que pode chamar esta API, ex:
+      # https://nexus.vercel.app
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Client ID do Google (o secret nao e usado neste fluxo)
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+    disk:
+      name: nexus-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

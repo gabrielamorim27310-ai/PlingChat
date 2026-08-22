@@ -68,10 +68,20 @@ export function formatDay(ts) {
 }
 
 export function avatarNode(user, { size = null, status = true } = {}) {
+  const dimensions = size ? `;width:${size}px;height:${size}px;font-size:${Math.round(size * 0.4)}px` : '';
   const node = el('span', {
     class: 'avatar',
-    style: `background:${user?.avatarColor || '#5865f2'}${size ? `;width:${size}px;height:${size}px;font-size:${Math.round(size * 0.4)}px` : ''}`
-  }, initials(user?.username));
+    style: `background:${user?.avatarColor || '#5865f2'}${dimensions}`
+  }, user?.avatarUrl ? '' : initials(user?.username));
+
+  if (user?.avatarUrl) {
+    node.append(el('img', {
+      src: user.avatarUrl,
+      alt: '',
+      referrerPolicy: 'no-referrer',
+      style: 'width:100%;height:100%;border-radius:50%;object-fit:cover'
+    }));
+  }
   if (status && user?.status) node.dataset.status = user.status;
   return node;
 }

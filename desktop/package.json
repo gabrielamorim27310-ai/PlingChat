@@ -1,0 +1,13 @@
+{
+  "name": "nexus67-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "App de mesa do nexus67 — mesma coisa do navegador, sem as bordas de navegador.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^43.4.1"
+  }
+}

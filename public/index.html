@@ -8,13 +8,19 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>try { document.documentElement.dataset.theme = localStorage.getItem('nexus.theme') || 'dark'; } catch (e) {}</script>
 <link rel="stylesheet" href="/css/style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⬢</text></svg>">
 </head>
 <body>
 
+<!-- ----------------------------------------------------------- loading -->
+<div id="loading" class="loading">
+  <span class="logo">⬢</span>
+</div>
+
 <!-- ------------------------------------------------------------- login -->
-<div id="auth" class="auth">
+<div id="auth" class="auth" hidden>
   <div class="auth-bg"></div>
   <div class="auth-card">
     <div class="auth-brand"><span class="logo">⬢</span> nexus67</div>
@@ -97,8 +103,7 @@
     </button>
     <div class="rail-sep"></div>
     <div id="railGuilds" class="rail-guilds"></div>
-    <button class="rail-item rail-add" id="btnCreateGuild" title="Criar servidor">+</button>
-    <button class="rail-item rail-join" id="btnJoinGuild" title="Entrar em um servidor">🧭</button>
+    <button class="rail-item rail-add" id="btnAddGuild" title="Adicionar um servidor"></button>
   </nav>
 
   <!-- barra lateral -->
@@ -163,11 +168,12 @@
     <section class="stage" id="stage" hidden>
       <div class="stage-grid" id="stageGrid"></div>
       <div class="stage-bar">
-        <button class="pill-btn" id="stageMic">🎙️ Mudo</button>
-        <button class="pill-btn" id="stageCam">📷 Câmera</button>
-        <button class="pill-btn" id="stageScreen">🖥️ Tela</button>
-        <button class="pill-btn danger" id="stageLeave">Sair</button>
-        <button class="pill-btn ghost" id="stageCollapse">Ocultar</button>
+        <button class="pill-btn" id="stageMic"><span class="pill-icon"></span><span class="pill-label">Mudo</span></button>
+        <button class="pill-btn" id="stageCam"><span class="pill-icon"></span><span class="pill-label">Câmera</span></button>
+        <button class="pill-btn" id="stageScreen"><span class="pill-icon"></span><span class="pill-label">Tela</span></button>
+        <button class="pill-btn" id="stageFullscreen"><span class="pill-icon"></span><span class="pill-label">Tela cheia</span></button>
+        <button class="pill-btn danger" id="stageLeave"><span class="pill-label">Sair</span></button>
+        <button class="pill-btn ghost" id="stageCollapse"><span class="pill-label">Ocultar</span></button>
       </div>
     </section>
 

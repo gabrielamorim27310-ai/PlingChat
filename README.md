@@ -109,6 +109,10 @@ O estado vive em SQLite (`data/nexus.db`, criado no primeiro boot) e o tempo rea
 
 ---
 
+## Implantação
+
+Frontend na Vercel, backend no Render — passo a passo em [DEPLOY.md](DEPLOY.md).
+
 ## Notas de implantação
 
 O backend mantém **conexões WebSocket persistentes** e **estado em memória** (salas de voz, filas de música), além de gravar em um arquivo SQLite. Isso exige um host com processo de longa duração — Render, Railway, Fly.io, uma VPS ou similar. Plataformas puramente serverless não sustentam esse modelo sem trocar o transporte e o armazenamento.

@@ -6,6 +6,10 @@ const auth = require('./auth');
 const { all, get, run } = require('./db');
 const botModule = require('./bot');
 const google = require('./google');
+const invites = require('./invites');
+const mailer = require('./mailer');
+const turnstile = require('./turnstile');
+const rl = require('./ratelimit');
 
 const router = express.Router();
 
@@ -20,21 +24,90 @@ const wrap = (handler) => async (req, res) => {
 
 /* ------------------------------------------------------------------ auth */
 
-router.post('/auth/register', wrap(async (req, res) => {
-  res.json(await auth.register(req.body || {}));
+router.post('/auth/register', rl.limit(rl.presets.register), wrap(async (req, res) => {
+  await turnstile.verify(req.body?.turnstileToken, rl.clientIp(req));
+  const result = await auth.register(req.body || {});
+
+  // O envio nao pode derrubar o cadastro: se falhar, o usuario reenvia depois.
+  if (mailer.isEnabled()) {
+    mailer.sendVerification(store.getUser(result.user.id))
+      .catch((err) => console.warn('verificacao de e-mail:', err.message));
+  }
+  res.json({ ...result, verificationSent: mailer.isEnabled() });
 }));
 
-router.post('/auth/login', wrap(async (req, res) => {
-  res.json(await auth.login(req.body || {}));
+router.post('/auth/login', rl.limit({ ...rl.presets.login, by: (req) => String(req.body?.email || '').toLowerCase() }),
+  wrap(async (req, res) => {
+    await turnstile.verify(req.body?.turnstileToken, rl.clientIp(req));
+    const result = await auth.login(req.body || {});
+    rl.reset(req.rateLimitKey); // login valido zera o contador
+    res.json(result);
+  }));
+
+router.post('/auth/google', rl.limit(rl.presets.google), wrap(async (req, res) => {
+  res.json(await google.loginWithGoogle(req.body?.credential, req.body?.inviteCode));
 }));
 
-router.post('/auth/google', wrap(async (req, res) => {
-  res.json(await google.loginWithGoogle(req.body?.credential));
+/* ------------------------------------------------- recuperacao de senha */
+
+router.post('/auth/forgot', rl.limit(rl.presets.forgot), wrap(async (req, res) => {
+  await turnstile.verify(req.body?.turnstileToken, rl.clientIp(req));
+
+  if (!mailer.isEnabled()) throw new Error('A recuperacao de senha nao esta configurada neste servidor');
+
+  const user = store.getUserByEmail(String(req.body?.email || '').trim().toLowerCase());
+
+  // Resposta identica exista ou nao a conta, para nao revelar quem tem cadastro.
+  if (user?.email) {
+    mailer.sendPasswordReset(user).catch((err) => console.warn('reset de senha:', err.message));
+  }
+  res.json({ ok: true });
+}));
+
+router.post('/auth/reset', rl.limit(rl.presets.reset), wrap(async (req, res) => {
+  const userId = mailer.consumeToken(req.body?.token, 'reset');
+  const user = await auth.setPassword(userId, req.body?.password);
+  mailer.markVerified(userId); // so recebe o link quem controla a caixa
+  res.json({ user: store.publicUser(user), token: auth.signToken(userId) });
+}));
+
+router.post('/auth/verify', wrap(async (req, res) => {
+  const userId = mailer.consumeToken(req.body?.token, 'verify');
+  mailer.markVerified(userId);
+  res.json({ ok: true, user: store.publicUser(store.getUser(userId)) });
+}));
+
+router.post('/auth/resend-verification', auth.requireAuth, rl.limit(rl.presets.forgot), wrap(async (req, res) => {
+  if (!mailer.isEnabled()) throw new Error('O envio de e-mail nao esta configurado');
+  if (req.user.email_verified) throw new Error('Seu e-mail ja esta confirmado');
+  await mailer.sendVerification(req.user);
+  res.json({ ok: true });
+}));
+
+/* ----------------------------------------------------------- convites */
+
+router.get('/invites', auth.requireAuth, (req, res) => {
+  res.json({ codes: invites.listCodes(req.user.id), max: invites.MAX_ACTIVE_PER_USER });
+});
+
+router.post('/invites', auth.requireAuth, rl.limit(rl.presets.invite), wrap(async (req, res) => {
+  const code = invites.createCode(req.user.id, { note: req.body?.note || null, maxUses: req.body?.maxUses });
+  res.json({ code: code.code, codes: invites.listCodes(req.user.id) });
+}));
+
+router.delete('/invites/:code', auth.requireAuth, wrap(async (req, res) => {
+  invites.revokeCode(req.params.code, req.user.id);
+  res.json({ ok: true, codes: invites.listCodes(req.user.id) });
 }));
 
 /** Configuracao publica que o front precisa conhecer antes do login. */
 router.get('/config', (req, res) => {
-  res.json({ googleClientId: google.isEnabled() ? google.CLIENT_ID : null });
+  res.json({
+    googleClientId: google.isEnabled() ? google.CLIENT_ID : null,
+    turnstileSiteKey: turnstile.isEnabled() ? turnstile.SITE_KEY : null,
+    signupMode: invites.isOpen() ? 'open' : 'invite',
+    passwordResetEnabled: mailer.isEnabled()
+  });
 });
 
 router.get('/auth/me', auth.requireAuth, (req, res) => {
@@ -80,7 +153,7 @@ router.get('/bootstrap', auth.requireAuth, wrap(async (req, res) => {
 
 /* ---------------------------------------------------------------- guilds */
 
-router.post('/guilds', auth.requireAuth, wrap(async (req, res) => {
+router.post('/guilds', auth.requireAuth, rl.limit(rl.presets.guild), wrap(async (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (name.length < 2 || name.length > 40) throw new Error('O nome do servidor precisa ter de 2 a 40 caracteres');
   const guild = store.createGuild({ name, ownerId: req.user.id });
@@ -185,7 +258,7 @@ router.get('/channels/:id/messages', auth.requireAuth, wrap(async (req, res) => 
 
 /* -------------------------------------------------------------------- dms */
 
-router.post('/dms', auth.requireAuth, wrap(async (req, res) => {
+router.post('/dms', auth.requireAuth, rl.limit(rl.presets.dm), wrap(async (req, res) => {
   const otherId = String(req.body?.userId || '');
   const other = store.getUser(otherId);
   if (!other) throw new Error('Usuario nao encontrado');
@@ -203,7 +276,7 @@ router.get('/friends', auth.requireAuth, wrap(async (req, res) => {
   res.json(store.listFriends(req.user.id));
 }));
 
-router.post('/friends/request', auth.requireAuth, wrap(async (req, res) => {
+router.post('/friends/request', auth.requireAuth, rl.limit(rl.presets.friend), wrap(async (req, res) => {
   const handle = String(req.body?.handle || '').trim();
   const target = store.getUserByHandle(handle) || get('SELECT * FROM users WHERE lower(username) = lower(?) AND is_bot = 0', handle);
   if (!target) throw new Error('Usuario nao encontrado. Use nome#0000.');

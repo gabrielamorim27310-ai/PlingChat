@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const store = require('./store');
 const { signToken } = require('./auth');
 const { run } = require('./db');
+const invites = require('./invites');
 
 const CERTS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 const ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
@@ -68,7 +69,7 @@ function usernameFrom(payload) {
  * Entra ou registra usando a conta do Google.
  * Se já existir uma conta com o mesmo e-mail, as contas são vinculadas.
  */
-async function loginWithGoogle(credential) {
+async function loginWithGoogle(credential, inviteCode = null) {
   const payload = await verifyIdToken(credential);
 
   let user = store.getUserByGoogleSub(payload.sub);
@@ -79,13 +80,22 @@ async function loginWithGoogle(credential) {
   }
 
   if (!user) {
+    // Conta nova pelo Google tambem precisa de convite quando o cadastro
+    // esta fechado.
+    invites.assertUsable(inviteCode);
+
     user = store.createUser({
       username: usernameFrom(payload),
       email: payload.email ? String(payload.email).toLowerCase() : null,
       passwordHash: null
     });
     run('UPDATE users SET google_sub = ? WHERE id = ?', payload.sub, user.id);
+
+    if (!invites.isOpen()) invites.consume(inviteCode, user.id);
   }
+
+  // O Google ja confirmou o endereco: nao precisamos verificar de novo.
+  if (payload.email_verified) run('UPDATE users SET email_verified = 1 WHERE id = ?', user.id);
 
   if (payload.picture) run('UPDATE users SET avatar_url = ? WHERE id = ?', payload.picture, user.id);
 

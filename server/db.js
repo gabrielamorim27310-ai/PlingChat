@@ -174,6 +174,32 @@ CREATE TABLE IF NOT EXISTS polls (
   closed     INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS signup_codes (
+  code       TEXT PRIMARY KEY,
+  created_by TEXT REFERENCES users(id) ON DELETE CASCADE,
+  note       TEXT,
+  max_uses   INTEGER NOT NULL DEFAULT 1,
+  uses       INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  revoked    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS signup_code_uses (
+  code    TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  used_at INTEGER NOT NULL,
+  PRIMARY KEY (code, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS email_tokens (
+  token      TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at    INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_email_tokens_user ON email_tokens(user_id, kind);
+
 CREATE TABLE IF NOT EXISTS marriages (
   guild_id  TEXT NOT NULL,
   user_a    TEXT NOT NULL,
@@ -193,6 +219,7 @@ function ensureColumn(table, column, definition) {
 }
 
 ensureColumn('users', 'google_sub', 'TEXT');
+ensureColumn('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 0');
 
 /** Gera um id curto ordenavel por tempo, no estilo snowflake. */
 let seq = 0;

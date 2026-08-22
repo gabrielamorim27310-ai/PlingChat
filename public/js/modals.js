@@ -335,6 +335,86 @@ function botPanel(guild) {
 
 /* ========================================================= usuário ====== */
 
+/** Convites de cadastro: cada pessoa gera códigos para trazer amigos. */
+function appInvites() {
+  const list = el('div', {});
+  const note = el('input', { type: 'text', maxlength: 40, placeholder: 'Para quem é? (opcional)' });
+  const uses = el('select', {},
+    el('option', { value: '1' }, '1 uso'),
+    el('option', { value: '5' }, '5 usos'),
+    el('option', { value: '25' }, '25 usos'));
+
+  const render = (codes, max) => {
+    list.replaceChildren();
+    if (!codes.length) {
+      list.append(el('p', { style: 'color:var(--text-mute);font-size:13px;padding:12px 0' },
+        'Nenhum convite ainda. Gere um abaixo e mande para quem você quer trazer.'));
+    }
+    for (const item of codes) {
+      const link = `${location.origin}/?cadastro=${item.code}`;
+      list.append(el('div', { class: 'invite-row' },
+        el('code', { class: item.active ? '' : 'used' }, item.code),
+        el('span', { style: 'color:var(--text-mute);font-size:12px' },
+          item.note ? `${item.note} · ` : '',
+          item.revoked ? 'revogado' : `${item.uses}/${item.maxUses} usados`),
+        el('div', { class: 'acts' },
+          item.active ? el('button', {
+            class: 'icon-btn', title: 'Copiar link de cadastro',
+            onclick: async () => {
+              await navigator.clipboard.writeText(link).catch(() => {});
+              toast('Link de convite copiado!', 'ok');
+            }
+          }, '🔗') : null,
+          item.active ? el('button', {
+            class: 'icon-btn', title: 'Copiar código',
+            onclick: async () => {
+              await navigator.clipboard.writeText(item.code).catch(() => {});
+              toast('Código copiado!', 'ok');
+            }
+          }, '📋') : null,
+          item.active ? el('button', {
+            class: 'icon-btn', title: 'Revogar',
+            onclick: async () => {
+              try {
+                const data = await api.del(`/invites/${item.code}`);
+                render(data.codes, max);
+                toast('Convite revogado.', 'ok');
+              } catch (err) {
+                toast(err.message, 'err');
+              }
+            }
+          }, '✕') : null)));
+    }
+  };
+
+  const create = async () => {
+    try {
+      const data = await api.post('/invites', { note: note.value.trim() || null, maxUses: Number(uses.value) });
+      note.value = '';
+      render(data.codes);
+      toast(`Convite ${data.code} criado!`, 'ok');
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  };
+
+  api.get('/invites')
+    .then(({ codes, max }) => render(codes, max))
+    .catch((err) => toast(err.message, 'err'));
+
+  return shell({
+    title: '🎟️ Convites de cadastro',
+    subtitle: 'O nexus67 é fechado: só cria conta quem tiver um código seu.',
+    body: el('div', {},
+      list,
+      el('div', { style: 'margin-top:18px;padding-top:16px;border-top:1px solid var(--line)' },
+        field('Anotação', note),
+        field('Quantos usos', uses),
+        el('button', { class: 'btn btn-primary btn-block', onclick: create }, 'Gerar novo convite'))),
+    foot: [el('button', { class: 'btn btn-ghost', onclick: closeModal }, 'Fechar')]
+  });
+}
+
 function userSettings() {
   const colors = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#00b0f4', '#9b59b6', '#1abc9c', '#e67e22'];
   const custom = el('input', { type: 'text', maxlength: 60, value: state.me.customStatus || '', placeholder: 'Jogando alguma coisa...' });
@@ -393,7 +473,12 @@ function userSettings() {
       field('Cor do avatar', swatches),
       field('Status', statusSelect),
       field('Status personalizado', custom),
-      field('Sobre mim', bio)),
+      field('Sobre mim', bio),
+      el('button', {
+        class: 'btn btn-ghost btn-block',
+        style: 'margin-top:6px',
+        onclick: () => openModal(appInvites())
+      }, '🎟️ Meus convites de cadastro')),
     foot: [
       el('button', {
         class: 'btn btn-danger',
@@ -523,5 +608,5 @@ function sendBotCommand(command) {
 
 export const modals = {
   createGuild, joinGuild, createChannel, guildMenu, invite,
-  guildSettings, botPanel, userSettings, addFriend, userCard
+  guildSettings, botPanel, userSettings, addFriend, userCard, appInvites
 };

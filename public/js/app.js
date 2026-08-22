@@ -58,31 +58,123 @@ export function toast(message, kind = '') {
 
 let authMode = 'login';
 
+/** Configuração pública do servidor, carregada antes do login. */
+export let appConfig = { googleClientId: null, turnstileSiteKey: null, signupMode: 'open', passwordResetEnabled: false };
+
+const params = new URLSearchParams(location.search);
+
+/** Remove um parâmetro da barra de endereços sem recarregar a página. */
+function dropParam(name) {
+  params.delete(name);
+  const query = params.toString();
+  history.replaceState(null, '', location.pathname + (query ? `?${query}` : ''));
+}
+
+/* ------------------------------------------------------------ turnstile */
+
+let turnstileLoaded = null;
+
+function loadTurnstile() {
+  if (window.turnstile) return Promise.resolve();
+  turnstileLoaded ||= new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    script.async = true;
+    script.defer = true;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.append(script);
+  });
+  return turnstileLoaded;
+}
+
+const NO_CAPTCHA = { token: () => null, reset: () => {} };
+
+/** Monta o widget num container e devolve como ler e resetar o token. */
+async function mountTurnstile(selector) {
+  if (!appConfig.turnstileSiteKey) return NO_CAPTCHA;
+
+  await loadTurnstile();
+  const box = $(selector);
+  box.hidden = false;
+
+  let token = null;
+  const widgetId = window.turnstile.render(box, {
+    sitekey: appConfig.turnstileSiteKey,
+    theme: 'dark',
+    language: 'pt-br',
+    callback: (value) => { token = value; },
+    'expired-callback': () => { token = null; },
+    'error-callback': () => { token = null; }
+  });
+
+  return {
+    token: () => token,
+    reset: () => { token = null; window.turnstile.reset(widgetId); }
+  };
+}
+
+/* ----------------------------------------------------------------- auth */
+
 function setupAuth() {
   const form = $('#authForm');
+  const forgotForm = $('#forgotForm');
+  const resetForm = $('#resetForm');
   const error = $('#authError');
+  const okBox = $('#authOk');
 
-  $('#authSwitch').addEventListener('click', () => {
-    authMode = authMode === 'login' ? 'register' : 'login';
+  let captcha = NO_CAPTCHA;
+
+  const showError = (node, message) => {
+    node.textContent = message;
+    node.hidden = false;
+  };
+
+  /** Alterna entre os três formulários da tela de entrada. */
+  function showForm(which) {
+    form.hidden = which !== 'auth';
+    forgotForm.hidden = which !== 'forgot';
+    resetForm.hidden = which !== 'reset';
+    $('#googleAuth').hidden = which !== 'auth' || !appConfig.googleClientId;
+    $('.auth-switch').hidden = which !== 'auth';
+    error.hidden = okBox.hidden = true;
+  }
+
+  function applyMode() {
     const isLogin = authMode === 'login';
     $('#fieldUsername').hidden = isLogin;
     $('#fieldUsername').querySelector('input').required = !isLogin;
+
+    const needsInvite = !isLogin && appConfig.signupMode === 'invite';
+    $('#fieldInvite').hidden = !needsInvite;
+    $('#fieldInvite').querySelector('input').required = needsInvite;
+
     $('#authTitle').textContent = isLogin ? 'Que bom te ver de novo!' : 'Criar uma conta';
     $('#authSub').textContent = isLogin
       ? 'Entre para conversar, chamar e jogar com a galera.'
-      : 'Leva menos de um minuto. Depois é só chamar a galera.';
+      : needsInvite
+        ? 'O cadastro é por convite. Use o código que te enviaram.'
+        : 'Leva menos de um minuto. Depois é só chamar a galera.';
     $('#authSubmit').textContent = isLogin ? 'Entrar' : 'Criar conta';
     $('#authSwitchText').textContent = isLogin ? 'Precisa de uma conta?' : 'Já tem conta?';
     $('#authSwitch').textContent = isLogin ? 'Registre-se' : 'Entrar';
+    $('#authForgotWrap').hidden = !isLogin || !appConfig.passwordResetEnabled;
     form.password.autocomplete = isLogin ? 'current-password' : 'new-password';
-    error.hidden = true;
+    error.hidden = okBox.hidden = true;
+  }
+
+  $('#authSwitch').addEventListener('click', () => {
+    authMode = authMode === 'login' ? 'register' : 'login';
+    applyMode();
   });
 
-  setupGoogleAuth().catch(() => { /* SSO opcional */ });
+  $('#authForgot').addEventListener('click', () => showForm('forgot'));
+  $('#forgotBack').addEventListener('click', () => showForm('auth'));
 
+  /* login e cadastro */
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    error.hidden = true;
+    error.hidden = okBox.hidden = true;
     const button = $('#authSubmit');
     button.disabled = true;
 
@@ -90,18 +182,89 @@ function setupAuth() {
       const body = {
         email: form.email.value,
         password: form.password.value,
-        ...(authMode === 'register' ? { username: form.username.value } : {})
+        turnstileToken: captcha.token(),
+        ...(authMode === 'register'
+          ? { username: form.username.value, inviteCode: form.inviteCode?.value?.trim() || null }
+          : {})
       };
       const data = await api.post(`/auth/${authMode}`, body);
       token.set(data.token);
       await start();
     } catch (err) {
-      error.textContent = err.message;
-      error.hidden = false;
-    } finally {
+      showError(error, err.message);
+      captcha.reset();
       button.disabled = false;
     }
   });
+
+  /* pedido de recuperação */
+  forgotForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    $('#forgotError').hidden = $('#forgotOk').hidden = true;
+    try {
+      await api.post('/auth/forgot', {
+        email: forgotForm.email.value,
+        turnstileToken: captcha.token()
+      });
+      $('#forgotOk').textContent = 'Se existir uma conta com esse e-mail, o link de recuperação já está a caminho.';
+      $('#forgotOk').hidden = false;
+    } catch (err) {
+      showError($('#forgotError'), err.message);
+    }
+  });
+
+  /* nova senha vinda do link */
+  resetForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    $('#resetError').hidden = true;
+    if (resetForm.password.value !== resetForm.confirm.value) {
+      return showError($('#resetError'), 'As senhas não são iguais.');
+    }
+    try {
+      const data = await api.post('/auth/reset', {
+        token: params.get('redefinir'),
+        password: resetForm.password.value
+      });
+      token.set(data.token);
+      dropParam('redefinir');
+      await start();
+    } catch (err) {
+      showError($('#resetError'), err.message);
+    }
+  });
+
+  /* estado inicial da tela */
+  (async () => {
+    try {
+      appConfig = await api.get('/config');
+    } catch { /* servidor fora do ar; segue com o padrão */ }
+
+    if (params.get('cadastro')) {
+      authMode = 'register';
+      $('#fieldInvite').querySelector('input').value = params.get('cadastro');
+    }
+    applyMode();
+
+    if (params.get('verificar')) {
+      try {
+        await api.post('/auth/verify', { token: params.get('verificar') });
+        okBox.textContent = 'E-mail confirmado! Pode entrar normalmente.';
+        okBox.hidden = false;
+      } catch (err) {
+        showError(error, err.message);
+      }
+      dropParam('verificar');
+    }
+
+    if (params.get('redefinir')) {
+      $('#authTitle').textContent = 'Criar uma nova senha';
+      $('#authSub').textContent = 'Escolha uma senha nova para sua conta.';
+      showForm('reset');
+    }
+
+    captcha = await mountTurnstile('#turnstileBox').catch(() => NO_CAPTCHA);
+    setupGoogleAuth().catch(() => { /* SSO opcional */ });
+  })();
 }
 
 /**
@@ -109,8 +272,7 @@ function setupAuth() {
  * configurado — sem isso, o fluxo de e-mail e senha segue sozinho.
  */
 async function setupGoogleAuth() {
-  const { googleClientId } = await api.get('/config');
-  if (!googleClientId) return;
+  if (!appConfig.googleClientId) return;
 
   await new Promise((resolve, reject) => {
     const script = document.createElement('script');
@@ -122,11 +284,14 @@ async function setupGoogleAuth() {
   });
 
   google.accounts.id.initialize({
-    client_id: googleClientId,
+    client_id: appConfig.googleClientId,
     callback: async ({ credential }) => {
       const error = $('#authError');
       try {
-        const data = await api.post('/auth/google', { credential });
+        const data = await api.post('/auth/google', {
+          credential,
+          inviteCode: $('#fieldInvite').querySelector('input').value.trim() || null
+        });
         token.set(data.token);
         await start();
       } catch (err) {
@@ -141,6 +306,29 @@ async function setupGoogleAuth() {
   google.accounts.id.renderButton(holder.querySelector('#googleButton'), {
     theme: 'filled_black', size: 'large', width: 340, text: 'continue_with', locale: 'pt-BR'
   });
+}
+
+/** Convite de servidor (?convite=) e aviso de e-mail não confirmado. */
+async function handleLaunchParams() {
+  $('#verifyBanner').hidden = state.me.emailVerified || !state.me.hasEmail || !appConfig.passwordResetEnabled;
+  dropParam('cadastro');
+
+  const code = params.get('convite');
+  if (!code) return;
+  dropParam('convite');
+
+  const existing = state.guilds.find((g) => g.inviteCode === code);
+  if (existing) return openGuild(existing.id);
+
+  try {
+    const { guild } = await api.post('/guilds/join', { code });
+    state.guilds.push(guild);
+    renderRail();
+    openGuild(guild.id);
+    toast(`Você entrou em "${guild.name}"!`, 'ok');
+  } catch (err) {
+    toast(err.message, 'err');
+  }
 }
 
 export function logout() {
@@ -168,6 +356,7 @@ async function start() {
   renderMe();
   renderRail();
   openHome();
+  handleLaunchParams();
 }
 
 function connectSocket() {
@@ -1037,6 +1226,16 @@ function bindUI() {
     $('#ringOverlay').hidden = true;
     state.pendingCall = null;
     if (call) socket.emit('call:decline', { channelId: call.channelId });
+  });
+
+  $('#verifyDismiss').addEventListener('click', () => { $('#verifyBanner').hidden = true; });
+  $('#verifyResend').addEventListener('click', async () => {
+    try {
+      await api.post('/auth/resend-verification');
+      toast('E-mail de confirmação reenviado. Olhe sua caixa de entrada.', 'ok');
+    } catch (err) {
+      toast(err.message, 'err');
+    }
   });
 
   $('#replyCancel').addEventListener('click', clearReply);

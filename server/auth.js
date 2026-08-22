@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const store = require('./store');
+const invites = require('./invites');
 const { DATA_DIR } = require('./db');
 
 /** Segredo persistido em disco para os tokens sobreviverem a um restart. */
@@ -32,7 +33,7 @@ function verifyToken(token) {
   }
 }
 
-async function register({ username, email, password }) {
+async function register({ username, email, password, inviteCode }) {
   username = String(username || '').trim();
   email = String(email || '').trim().toLowerCase();
 
@@ -41,9 +42,23 @@ async function register({ username, email, password }) {
   if (String(password || '').length < 6) throw new Error('A senha precisa de pelo menos 6 caracteres');
   if (store.getUserByEmail(email)) throw new Error('Ja existe uma conta com este e-mail');
 
+  // Valida o convite antes de criar qualquer coisa.
+  invites.assertUsable(inviteCode);
+
   const passwordHash = await bcrypt.hash(password, 10);
   const user = store.createUser({ username, email, passwordHash });
+
+  if (!invites.isOpen()) invites.consume(inviteCode, user.id);
+
   return { user: store.publicUser(user), token: signToken(user.id) };
+}
+
+/** Troca a senha de um usuario, usada pela recuperacao por e-mail. */
+async function setPassword(userId, password) {
+  if (String(password || '').length < 6) throw new Error('A senha precisa de pelo menos 6 caracteres');
+  const hash = await bcrypt.hash(password, 10);
+  require('./db').run('UPDATE users SET password_hash = ? WHERE id = ?', hash, userId);
+  return store.getUser(userId);
 }
 
 async function login({ email, password }) {
@@ -66,4 +81,4 @@ function requireAuth(req, res, next) {
   next();
 }
 
-module.exports = { register, login, signToken, verifyToken, requireAuth };
+module.exports = { register, login, setPassword, signToken, verifyToken, requireAuth };

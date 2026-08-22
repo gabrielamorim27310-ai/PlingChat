@@ -16,6 +16,10 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 const app = express();
 
+// Atras do proxy do Render, o IP real vem em X-Forwarded-For. Sem isso o
+// rate limiting enxergaria todo mundo como o mesmo endereco.
+app.set('trust proxy', 1);
+
 /**
  * O front pode ser servido de outro dominio (ex: Vercel) enquanto a API roda
  * aqui. ALLOWED_ORIGINS aceita uma lista separada por virgula; vazio libera

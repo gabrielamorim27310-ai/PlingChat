@@ -23,6 +23,21 @@ services:
       # Client ID do Google (o secret nao e usado neste fluxo)
       - key: GOOGLE_CLIENT_ID
         sync: false
+      # Cadastro por convite (padrao). Use "open" para liberar a qualquer um.
+      - key: SIGNUP_MODE
+        value: invite
+      # Envio de e-mail: verificacao e recuperacao de senha (opcional)
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: APP_URL
+        sync: false
+      # Cloudflare Turnstile (opcional). Sem as duas chaves fica desligado.
+      - key: TURNSTILE_SITE_KEY
+        sync: false
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
     disk:
       name: nexus-data
       mountPath: /opt/render/project/src/data

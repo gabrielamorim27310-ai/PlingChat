@@ -25,6 +25,8 @@ function publicUser(u) {
     customStatus: u.custom_status || null,
     bio: u.bio || null,
     isBot: !!u.is_bot,
+    emailVerified: !!u.email_verified,
+    hasEmail: !!u.email,
     createdAt: u.created_at
   };
 }

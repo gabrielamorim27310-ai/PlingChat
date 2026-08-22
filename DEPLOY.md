@@ -60,7 +60,50 @@ Contas Google com e-mail igual ao de uma conta existente são **vinculadas**, n�
 
 ---
 
-## 4. Antes de abrir para outras pessoas
+## 4. Cadastro por convite
+
+O `SIGNUP_MODE` vem como `invite`: só cria conta quem apresentar um código. A **primeira conta do banco é sempre liberada** — é ela que gera os primeiros convites, em **Perfil → Meus convites de cadastro**.
+
+Cada pessoa pode manter até `MAX_INVITES_PER_USER` convites ativos (padrão 5), com 1, 5 ou 25 usos cada. O link `https://SEU-APP/?cadastro=CODIGO` já abre a tela de cadastro com o código preenchido.
+
+Para abrir a qualquer um, defina `SIGNUP_MODE=open`.
+
+---
+
+## 5. E-mail: verificação e recuperação de senha (opcional)
+
+Sem isso configurado, **não existe recuperação de senha** — quem esquecer a senha perde a conta. O botão "Esqueci minha senha" só aparece quando o envio está ativo.
+
+1. Crie uma conta no [Resend](https://resend.com) e gere uma API key.
+2. Configure no Render:
+
+| Variável | Valor |
+|---|---|
+| `RESEND_API_KEY` | a chave gerada |
+| `MAIL_FROM` | `nexus67 <nao-responda@seudominio.com>` |
+| `APP_URL` | `https://nexus67.vercel.app` — usado para montar os links do e-mail |
+
+Sem domínio verificado, o Resend só entrega para o e-mail da própria conta; para valer em produção, verifique um domínio.
+
+Quem entra pelo Google já vem com e-mail confirmado — o Google atesta isso no próprio token.
+
+---
+
+## 6. Turnstile / CAPTCHA (opcional)
+
+1. Em [Cloudflare Turnstile](https://dash.cloudflare.com/?to=/:account/turnstile), crie um widget para o domínio `nexus67.vercel.app`.
+2. Configure no Render:
+
+| Variável | Valor |
+|---|---|
+| `TURNSTILE_SITE_KEY` | chave pública (vai para o navegador) |
+| `TURNSTILE_SECRET_KEY` | chave secreta |
+
+Com as duas presentes, o desafio aparece no cadastro, no login e na recuperação de senha. Faltando qualquer uma, ele fica desligado e nada quebra.
+
+---
+
+## 7. Antes de abrir para outras pessoas
 
 - **Servidor TURN.** Hoje só há STUN público. Duas pessoas atrás de NAT restrito (4G, redes corporativas) podem não conseguir fechar a conexão de voz/vídeo. Um TURN (coturn próprio, Twilio, Metered) resolve; a lista fica em `ICE_SERVERS`, no topo de `public/js/voice.js`.
 - **Escala da malha de voz.** A conexão é ponto a ponto entre todos os participantes: cada pessoa envia sua mídia para todas as outras. Funciona bem até ~6 pessoas por canal. Acima disso, o caminho é um SFU (mediasoup, LiveKit, Janus).

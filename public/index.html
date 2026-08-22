@@ -34,8 +34,44 @@
         <span>Senha</span>
         <input name="password" type="password" required minlength="6" autocomplete="current-password">
       </label>
+      <label class="field" id="fieldInvite" hidden>
+        <span>Código de convite</span>
+        <input name="inviteCode" type="text" autocomplete="off" placeholder="XXXXX-XXXXX">
+      </label>
+      <div class="turnstile" id="turnstileBox" hidden></div>
       <p class="auth-error" id="authError" hidden></p>
+      <p class="auth-ok" id="authOk" hidden></p>
       <button class="btn btn-primary btn-block" id="authSubmit" type="submit">Entrar</button>
+      <p class="auth-forgot" id="authForgotWrap">
+        <button type="button" class="link" id="authForgot">Esqueci minha senha</button>
+      </p>
+    </form>
+
+    <!-- recuperação de senha -->
+    <form id="forgotForm" autocomplete="on" hidden>
+      <label class="field">
+        <span>E-mail da conta</span>
+        <input name="email" type="email" required autocomplete="email">
+      </label>
+      <div class="turnstile" id="turnstileForgot" hidden></div>
+      <p class="auth-error" id="forgotError" hidden></p>
+      <p class="auth-ok" id="forgotOk" hidden></p>
+      <button class="btn btn-primary btn-block" type="submit">Enviar link de recuperação</button>
+      <p class="auth-forgot"><button type="button" class="link" id="forgotBack">Voltar para o login</button></p>
+    </form>
+
+    <!-- nova senha, vindo do link do e-mail -->
+    <form id="resetForm" autocomplete="off" hidden>
+      <label class="field">
+        <span>Nova senha</span>
+        <input name="password" type="password" required minlength="6" autocomplete="new-password">
+      </label>
+      <label class="field">
+        <span>Confirme a nova senha</span>
+        <input name="confirm" type="password" required minlength="6" autocomplete="new-password">
+      </label>
+      <p class="auth-error" id="resetError" hidden></p>
+      <button class="btn btn-primary btn-block" type="submit">Salvar nova senha</button>
     </form>
 
     <div class="auth-divider" id="googleAuth" hidden>
@@ -106,6 +142,11 @@
 
   <!-- área principal -->
   <main class="main">
+    <div class="verify-banner" id="verifyBanner" hidden>
+      <span>Confirme seu e-mail para não perder o acesso à conta.</span>
+      <button class="link" id="verifyResend">Reenviar e-mail</button>
+      <button class="icon-btn" id="verifyDismiss" title="Fechar">✕</button>
+    </div>
     <header class="chat-header">
       <button class="icon-btn only-mobile" id="btnBack">‹</button>
       <span class="chat-title" id="chatTitle">Início</span>

@@ -19,6 +19,13 @@ Plataforma de comunidade no estilo Discord: **servidores com canais**, **amizade
 - Conversas diretas com notificação e contador de não lidas
 - Lista de amigos separada por online / todos / pendentes / bloqueados
 
+### Conta e acesso
+- Login por e-mail e senha, ou **SSO do Google** (ID token validado contra o JWKS oficial)
+- **Cadastro por convite**: cada pessoa gera códigos para trazer amigos; a primeira conta é liberada
+- **Recuperação de senha** e confirmação de e-mail por link (via Resend)
+- **Rate limiting** em login, cadastro, recuperação, convites, amizades e criação de servidor
+- **Cloudflare Turnstile** opcional no cadastro e no login
+
 ### Chat
 - Tempo real via WebSocket, com histórico paginado
 - Responder, editar, apagar, reagir com emoji

@@ -52,13 +52,14 @@ function assertUsable(code) {
   return row;
 }
 
-/** Marca o convite como consumido por um usuário. */
+/** Marca o convite como consumido por um usuário. Devolve o convite (pra saber quem convidou). */
 function consume(code, userId) {
   const row = findCode(code);
-  if (!row) return;
+  if (!row) return null;
   run('UPDATE signup_codes SET uses = uses + 1 WHERE code = ?', row.code);
   run('INSERT OR IGNORE INTO signup_code_uses (code, user_id, used_at) VALUES (?, ?, ?)',
     row.code, userId, Date.now());
+  return row;
 }
 
 function createCode(userId, { note = null, maxUses = 1 } = {}) {
@@ -73,7 +74,7 @@ function createCode(userId, { note = null, maxUses = 1 } = {}) {
   const code = generateCode();
   run(
     'INSERT INTO signup_codes (code, created_by, note, max_uses, uses, created_at) VALUES (?, ?, ?, ?, 0, ?)',
-    code, userId, note, Math.min(Math.max(Number(maxUses) || 1, 1), 25), Date.now()
+    code, userId, note, Math.min(Math.max(Number(maxUses) || 1, 1), 10), Date.now()
   );
   return findCode(code);
 }

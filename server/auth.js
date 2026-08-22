@@ -48,7 +48,12 @@ async function register({ username, email, password, inviteCode }) {
   const passwordHash = await bcrypt.hash(password, 10);
   const user = store.createUser({ username, email, passwordHash });
 
-  if (!invites.isOpen()) invites.consume(inviteCode, user.id);
+  if (!invites.isOpen()) {
+    const code = invites.consume(inviteCode, user.id);
+    // O convite ja vem com amizade: quem convidou e quem chegou nao precisam
+    // se pedir amizade depois, ja se conhecem.
+    if (code?.created_by) store.autoFriend(code.created_by, user.id);
+  }
 
   return { user: store.publicUser(user), token: signToken(user.id) };
 }

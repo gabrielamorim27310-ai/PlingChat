@@ -4,3 +4,6 @@ data/
 .env
 .DS_Store
 dist/
+
+.vercel
+.env*.local

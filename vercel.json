@@ -5,6 +5,6 @@
   "installCommand": "echo sem dependencias no front",
   "framework": null,
   "rewrites": [
-    { "source": "/((?!vendor/|css/|js/|.*\.).*)", "destination": "/index.html" }
+    { "source": "/((?!vendor/|css/|js/|.*\\.).*)", "destination": "/index.html" }
   ]
 }

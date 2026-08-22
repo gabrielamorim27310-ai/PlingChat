@@ -16,7 +16,7 @@ O backend não roda em plataforma serverless: ele mantém conexões WebSocket ab
 |---|---|
 | `NODE_VERSION` | `24` |
 | `NEXUS_SECRET` | qualquer string longa e aleatória (o Render gera sozinho pelo blueprint) |
-| `ALLOWED_ORIGINS` | a URL da Vercel, ex. `https://nexus.vercel.app` |
+| `ALLOWED_ORIGINS` | `https://nexus67.vercel.app` |
 | `GOOGLE_CLIENT_ID` | o Client ID do passo 3 (opcional) |
 
 4. **Disco persistente:** monte um volume em `/opt/render/project/src/data`. Sem ele o banco é apagado a cada deploy. Isso exige plano pago — o `free` não suporta disco.
@@ -46,9 +46,11 @@ Depois do primeiro deploy, volte ao Render e coloque o domínio da Vercel em `AL
 
 1. No [Google Cloud Console](https://console.cloud.google.com/apis/credentials): **Criar credenciais** → **ID do cliente OAuth** → tipo **Aplicativo da Web**.
 2. Em **Origens JavaScript autorizadas**, adicione:
-   - `https://SEU-APP.vercel.app`
-   - `http://localhost:3000` (para desenvolvimento)
+   - `https://nexus67.vercel.app`  ✅ já cadastrada
+   - `http://localhost:3000` (para desenvolvimento) ⚠️ **ainda falta cadastrar**
 3. Copie o **Client ID** e coloque em `GOOGLE_CLIENT_ID` no Render.
+
+O cliente deste projeto (`nexus-506223`) ja existe e e do tipo Web. Para rodar o SSO localmente, adicione `http://localhost:3000` nas origens da mesma credencial.
 
 Não é preciso configurar URI de redirecionamento nem client secret: o fluxo usa o Google Identity Services, que devolve um ID token direto ao navegador. O backend valida esse token contra o JWKS oficial do Google (`server/google.js`) — assinatura RS256, `aud` igual ao seu Client ID e `iss` do Google.
 

@@ -1,6 +1,6 @@
 import { api } from './api.js';
-import { $, el, avatarNode } from './util.js';
-import { state, socket, toast, openGuild, openHome, startDM, refresh } from './app.js';
+import { $, el, icon, avatarNode } from './util.js';
+import { state, socket, toast, openGuild, openHome, startDM, refresh, appConfig, setupPush, applyTheme, getTheme } from './app.js';
 
 /* ============================================================ básico ==== */
 
@@ -38,6 +38,24 @@ const switchRow = (label, description, value, onChange) => {
 };
 
 /* =========================================================== servidor === */
+
+/** Entrada única pra criar OU entrar num servidor — antes eram dois botões separados. */
+function addGuild() {
+  const option = (name, title, subtitle, onclick) => el('button', {
+    class: 'guild-option',
+    onclick
+  }, icon(name, 22), el('div', {},
+    el('strong', {}, title),
+    el('span', {}, subtitle)));
+
+  return shell({
+    title: 'Adicionar um servidor',
+    body: el('div', { class: 'guild-options' },
+      option('plus', 'Criar um servidor', 'Comece um do zero, só seu.', () => openModal(createGuild())),
+      option('compass', 'Entrar com um convite', 'Já tem um código ou link? Use aqui.', () => openModal(joinGuild()))),
+    foot: [cancelBtn()]
+  });
+}
 
 function createGuild() {
   const input = el('input', { type: 'text', maxlength: 40, placeholder: 'Servidor do Rafa' });
@@ -129,21 +147,21 @@ function guildMenu(guild) {
   const isOwner = guild.myRole === 'owner';
   const isAdmin = ['owner', 'admin'].includes(guild.myRole);
 
-  const item = (icon, label, onclick, danger = false) => el('button', {
+  const item = (iconName, label, onclick, danger = false) => el('button', {
     class: 'channel',
     style: danger ? 'color:var(--red)' : '',
     onclick
-  }, el('span', { class: 'glyph' }, icon), el('span', { class: 'name' }, label));
+  }, el('span', { class: 'glyph' }, icon(iconName, 15)), el('span', { class: 'name' }, label));
 
   return shell({
     title: guild.name,
     subtitle: `${guild.members.length} membros · você é ${guild.myRole}`,
     body: el('div', {},
-      item('🔗', 'Convidar pessoas', () => openModal(invite(guild))),
-      isAdmin ? item('⚙️', 'Configurações do servidor', () => openModal(guildSettings(guild))) : null,
-      isAdmin ? item('🤖', 'Painel do bot Nexy', () => openModal(botPanel(guild))) : null,
-      isAdmin ? item('➕', 'Criar canal', () => openModal(createChannel(guild.id))) : null,
-      !isOwner ? item('🚪', 'Sair do servidor', async () => {
+      item('user-plus', 'Convidar pessoas', () => openModal(invite(guild))),
+      isAdmin ? item('sliders', 'Configurações do servidor', () => openModal(guildSettings(guild))) : null,
+      isAdmin ? item('cpu', 'Painel do bot Nexy', () => openModal(botPanel(guild))) : null,
+      isAdmin ? item('plus', 'Criar canal', () => openModal(createChannel(guild.id))) : null,
+      !isOwner ? item('log-out', 'Sair do servidor', async () => {
         if (!confirm(`Sair de "${guild.name}"?`)) return;
         await api.del(`/guilds/${guild.id}/leave`);
         state.guilds = state.guilds.filter((g) => g.id !== guild.id);
@@ -151,7 +169,7 @@ function guildMenu(guild) {
         openHome();
         refresh.rail();
       }, true) : null,
-      isOwner ? item('🗑️', 'Excluir servidor', async () => {
+      isOwner ? item('trash', 'Excluir servidor', async () => {
         if (!confirm(`Excluir "${guild.name}" para sempre? Isso apaga todos os canais e mensagens.`)) return;
         await api.del(`/guilds/${guild.id}`);
         state.guilds = state.guilds.filter((g) => g.id !== guild.id);
@@ -167,10 +185,52 @@ function invite(guild) {
   const input = el('input', { type: 'text', value: guild.inviteCode, readonly: true });
   const link = `${location.origin}/?convite=${guild.inviteCode}`;
 
+  const memberIds = new Set(guild.members.map((m) => m.id));
+  const eligible = state.friends.friends.filter((f) => !memberIds.has(f.id));
+
+  const friendList = el('div', { class: 'invite-friend-list' });
+  const renderFriends = () => {
+    friendList.replaceChildren();
+    if (!eligible.length) {
+      friendList.append(el('p', { style: 'color:var(--text-mute);font-size:13px;padding:8px 0' },
+        state.friends.friends.length ? 'Seus amigos já estão todos aqui.' : 'Você ainda não tem amigos adicionados.'));
+      return;
+    }
+    for (const friend of eligible) {
+      const row = el('div', { class: 'invite-friend-row' },
+        avatarNode(friend, { size: 28 }),
+        el('span', { class: 'name' }, friend.username),
+        el('button', {
+          class: 'btn btn-ghost',
+          onclick: async (event) => {
+            try {
+              await api.post(`/guilds/${guild.id}/invite-friend`, { userId: friend.id });
+              row.replaceWith(el('div', { class: 'invite-friend-row done' }, `✓ ${friend.username} entrou`));
+              toast(`${friend.username} entrou no servidor!`, 'ok');
+            } catch (err) {
+              toast(err.message, 'err');
+            }
+          }
+        }, 'Adicionar'));
+      friendList.append(row);
+    }
+  };
+  renderFriends();
+
+  const shareBtn = navigator.share ? el('button', {
+    class: 'btn btn-ghost btn-block',
+    style: 'margin-top:10px',
+    onclick: () => navigator.share({ title: `Entrar em ${guild.name}`, url: link }).catch(() => {})
+  }, 'Compartilhar link') : null;
+
   return shell({
     title: 'Convidar para o servidor',
-    subtitle: 'Compartilhe o código ou o link abaixo. Quem tiver ele entra na hora.',
+    subtitle: 'Adicione direto quem já é seu amigo, ou compartilhe o código/link com mais gente.',
     body: el('div', {},
+      el('div', { style: 'margin-bottom:16px' },
+        el('p', { style: 'font-size:12px;color:var(--text-mute);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;font-weight:700' }, 'Convidar amigo direto'),
+        friendList),
+      el('p', { style: 'font-size:12px;color:var(--text-mute);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;font-weight:700' }, 'Ou por código/link'),
       el('div', { class: 'invite-box' },
         input,
         el('button', {
@@ -189,7 +249,8 @@ function invite(guild) {
             await navigator.clipboard.writeText(link).catch(() => {});
             toast('Link copiado!', 'ok');
           }
-        }, 'Copiar'))),
+        }, 'Copiar')),
+      shareBtn),
     foot: [el('button', { class: 'btn btn-ghost', onclick: closeModal }, 'Fechar')]
   });
 }
@@ -341,8 +402,8 @@ function appInvites() {
   const note = el('input', { type: 'text', maxlength: 40, placeholder: 'Para quem é? (opcional)' });
   const uses = el('select', {},
     el('option', { value: '1' }, '1 uso'),
-    el('option', { value: '5' }, '5 usos'),
-    el('option', { value: '25' }, '25 usos'));
+    el('option', { value: '3' }, '3 usos'),
+    el('option', { value: '10' }, '10 usos'));
 
   const render = (codes, max) => {
     list.replaceChildren();
@@ -442,6 +503,22 @@ function userSettings() {
     el('option', { value: 'invisible' }, '⚫ Invisível'));
   statusSelect.value = state.me.status === 'offline' ? 'online' : state.me.status;
 
+  const themeOption = (mode, name, label) => {
+    const btn = el('button', {
+      class: `theme-option ${getTheme() === mode ? 'active' : ''}`,
+      onclick: () => {
+        applyTheme(mode);
+        for (const b of themeBtns) b.classList.toggle('active', b === btn);
+      }
+    }, icon(name, 18), el('span', {}, label));
+    return btn;
+  };
+  const themeBtns = [
+    themeOption('dark', 'moon', 'Escuro'),
+    themeOption('light', 'sun', 'Claro'),
+    themeOption('auto', 'contrast', 'Automático')
+  ];
+
   const save = async () => {
     try {
       const { user } = await api.patch('/me', {
@@ -471,6 +548,7 @@ function userSettings() {
           el('div', { style: 'font-size:12px;color:var(--text-mute)' },
             `Seu identificador: ${state.me.username}#${state.me.tag}`))),
       field('Cor do avatar', swatches),
+      field('Tema', el('div', { class: 'theme-picker' }, themeBtns)),
       field('Status', statusSelect),
       field('Status personalizado', custom),
       field('Sobre mim', bio),
@@ -478,7 +556,12 @@ function userSettings() {
         class: 'btn btn-ghost btn-block',
         style: 'margin-top:6px',
         onclick: () => openModal(appInvites())
-      }, '🎟️ Meus convites de cadastro')),
+      }, icon('user-plus', 15), ' Meus convites de cadastro'),
+      appConfig.vapidPublicKey ? el('button', {
+        class: 'btn btn-ghost btn-block',
+        style: 'margin-top:6px',
+        onclick: setupPush
+      }, icon('bell', 15), Notification?.permission === 'granted' ? ' Notificações ativadas' : ' Ativar notificações') : null),
     foot: [
       el('button', {
         class: 'btn btn-danger',
@@ -607,6 +690,6 @@ function sendBotCommand(command) {
 }
 
 export const modals = {
-  createGuild, joinGuild, createChannel, guildMenu, invite,
+  addGuild, createGuild, joinGuild, createChannel, guildMenu, invite,
   guildSettings, botPanel, userSettings, addFriend, userCard, appInvites
 };

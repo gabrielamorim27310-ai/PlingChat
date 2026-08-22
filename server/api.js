@@ -9,6 +9,7 @@ const google = require('./google');
 const invites = require('./invites');
 const mailer = require('./mailer');
 const turnstile = require('./turnstile');
+const push = require('./push');
 const rl = require('./ratelimit');
 
 const router = express.Router();
@@ -106,9 +107,23 @@ router.get('/config', (req, res) => {
     googleClientId: google.isEnabled() ? google.CLIENT_ID : null,
     turnstileSiteKey: turnstile.isEnabled() ? turnstile.SITE_KEY : null,
     signupMode: invites.isOpen() ? 'open' : 'invite',
-    passwordResetEnabled: mailer.isEnabled()
+    passwordResetEnabled: mailer.isEnabled(),
+    vapidPublicKey: push.isEnabled() ? push.PUBLIC_KEY : null
   });
 });
+
+/** Inscricao/cancelamento de notificacoes push (Web Push). */
+router.post('/push/subscribe', auth.requireAuth, wrap(async (req, res) => {
+  const sub = req.body?.subscription;
+  if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) throw new Error('Inscricao invalida');
+  store.saveSubscription(req.user.id, sub);
+  res.json({ ok: true });
+}));
+
+router.post('/push/unsubscribe', auth.requireAuth, wrap(async (req, res) => {
+  if (req.body?.endpoint) store.removeSubscription(req.body.endpoint);
+  res.json({ ok: true });
+}));
 
 router.get('/auth/me', auth.requireAuth, (req, res) => {
   res.json({ user: store.publicUser(req.user) });
@@ -187,6 +202,21 @@ router.post('/guilds/join', auth.requireAuth, wrap(async (req, res) => {
       myRole: 'member'
     }
   });
+}));
+
+/** Convite direto: adiciona um amigo já existente ao servidor, sem precisar de código. */
+router.post('/guilds/:id/invite-friend', auth.requireAuth, wrap(async (req, res) => {
+  const guild = store.getGuild(req.params.id);
+  if (!guild || !store.getMember(guild.id, req.user.id)) throw new Error('Sem acesso a este servidor');
+
+  const friendId = String(req.body?.userId || '');
+  if (!store.areFriends(req.user.id, friendId)) throw new Error('Só dá pra convidar quem já é seu amigo');
+  if (store.isBanned(guild.id, friendId)) throw new Error('Essa pessoa está banida deste servidor');
+  if (store.getMember(guild.id, friendId)) throw new Error('Essa pessoa já está no servidor');
+
+  store.addMember(guild.id, friendId);
+  req.app.locals.onMemberJoin?.(guild.id, friendId);
+  res.json({ ok: true, members: store.listMembers(guild.id) });
 }));
 
 router.delete('/guilds/:id/leave', auth.requireAuth, wrap(async (req, res) => {

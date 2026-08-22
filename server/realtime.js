@@ -4,11 +4,19 @@ const { Server } = require('socket.io');
 const store = require('./store');
 const auth = require('./auth');
 const botModule = require('./bot');
+const push = require('./push');
 
 const guildRoom = (id) => `guild:${id}`;
 const channelRoom = (id) => `channel:${id}`;
 const userRoom = (id) => `user:${id}`;
 const voiceRoom = (id) => `voice:${id}`;
+
+/** @usuario dentro do texto cita essa pessoa? (mesma regra do highlight no front) */
+function mentions(content, username) {
+  if (!content || !username) return false;
+  const name = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`@${name}\\b`, 'i').test(content);
+}
 
 /** Estado de voz em memoria: channelId -> Map<userId, { socketId, state, user }>. */
 const voiceState = new Map();
@@ -37,6 +45,36 @@ function attachRealtime(server, app, { originAllowed = () => true } = {}) {
     if (!channel) return [];
     if (channel.type === 'dm') return store.dmParticipants(channel.id).map(userRoom);
     return [guildRoom(channel.guild_id)];
+  }
+
+  /** Tem alguma aba/socket dessa pessoa conectada agora? */
+  const isOnline = (userId) => (io.sockets.adapter.rooms.get(userRoom(userId))?.size || 0) > 0;
+
+  /**
+   * Push so pra quem esta offline (senao a pessoa ja viu pelo socket) e so
+   * quando faz sentido interromper: toda DM, ou quando foi citado num canal
+   * de servidor. Nunca deixa a falha de push derrubar o resto do fluxo.
+   */
+  function notifyOffline(channel, message) {
+    if (!push.isEnabled() || !channel) return;
+    let targets = [];
+    if (channel.type === 'dm') {
+      targets = store.dmParticipants(channel.id).filter((id) => id !== message.author.id);
+    } else if (channel.guild_id) {
+      targets = store.listMembers(channel.guild_id)
+        .map((m) => m.id)
+        .filter((id) => id !== message.author.id && mentions(message.content, store.getUser(id)?.username));
+    }
+    const title = channel.type === 'dm' ? message.author.username : `${message.author.username} em #${channel.name}`;
+    for (const userId of targets) {
+      if (isOnline(userId)) continue;
+      push.notify(userId, {
+        title,
+        body: (message.content || '').slice(0, 140),
+        tag: channel.id,
+        url: `/?canal=${channel.id}`
+      }).catch(() => {});
+    }
   }
 
   function deliverMessage(payload) {
@@ -74,6 +112,7 @@ function attachRealtime(server, app, { originAllowed = () => true } = {}) {
 
     const channel = store.getChannel(payload.channelId);
     for (const room of channelAudience(channel)) io.to(room).emit('message:new', payload);
+    notifyOffline(channel, payload);
   }
 
   botModule.initBot({ deliver: deliverMessage });

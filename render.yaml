@@ -38,6 +38,15 @@ services:
         sync: false
       - key: TURNSTILE_SECRET_KEY
         sync: false
+      # Notificacoes push (Web Push/VAPID). Gerado uma vez com
+      # webpush.generateVAPIDKeys() — nao depende de conta externa nenhuma.
+      # Sem as duas chaves, o botao de notificacao nem aparece no front.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
     disk:
       name: nexus-data
       mountPath: /opt/render/project/src/data

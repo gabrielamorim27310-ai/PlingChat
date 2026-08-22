@@ -388,6 +388,15 @@ function sendFriendRequest(fromId, toId) {
   return get('SELECT * FROM friendships WHERE id = ?', id);
 }
 
+/** Amizade automatica, ja aceita — usada quando o convite de cadastro embute amizade. */
+function autoFriend(a, b) {
+  if (a === b || friendshipBetween(a, b)) return;
+  run(
+    "INSERT INTO friendships (id, requester_id, addressee_id, status, created_at) VALUES (?, ?, ?, 'accepted', ?)",
+    newId(), a, b, now()
+  );
+}
+
 function respondFriendRequest(friendshipId, userId, accept) {
   const f = get('SELECT * FROM friendships WHERE id = ?', friendshipId);
   if (!f || f.addressee_id !== userId || f.status !== 'pending') throw new Error('Pedido invalido');
@@ -499,6 +508,19 @@ function unreadCounts(userId) {
   return out;
 }
 
+/** Notificacoes push (Web Push). Uma linha por dispositivo/navegador inscrito. */
+const saveSubscription = (userId, sub) =>
+  run(
+    `INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, created_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth`,
+    sub.endpoint, userId, sub.keys.p256dh, sub.keys.auth, now()
+  );
+
+const removeSubscription = (endpoint) => run('DELETE FROM push_subscriptions WHERE endpoint = ?', endpoint);
+
+const listSubscriptions = (userId) => all('SELECT * FROM push_subscriptions WHERE user_id = ?', userId);
+
 module.exports = {
   now, pickColor, publicUser, BOT_USER_ID,
   createUser, getUser, getUserByEmail, getUserByGoogleSub, getUserByHandle, searchUsers, setStatus, updateProfile,
@@ -508,8 +530,9 @@ module.exports = {
   channelPayload, createChannel, getChannel, listChannels, deleteChannel, renameChannel, findChannelByName,
   getOrCreateDM, dmParticipants, listDMs, canAccess,
   messagePayload, createMessage, getMessage, listMessages, editMessage, deleteMessage, purgeMessages, toggleReaction,
-  sendFriendRequest, respondFriendRequest, removeFriend, blockUser, unblockUser,
+  sendFriendRequest, respondFriendRequest, removeFriend, blockUser, unblockUser, autoFriend,
   listFriends, areFriends, isBlocked, friendshipBetween,
   getSettings, updateSettings,
-  markRead, unreadCounts
+  markRead, unreadCounts,
+  saveSubscription, removeSubscription, listSubscriptions
 };

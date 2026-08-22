@@ -1,8 +1,24 @@
 import { api, token } from './api.js';
 import { API_BASE } from './config.js';
-import { $, el, avatarNode, renderMarkdown, formatTime, formatDay, dayKey, initials, debounce } from './util.js';
+import { $, el, icon, avatarNode, renderMarkdown, formatTime, formatDay, dayKey, initials, debounce } from './util.js';
 import { VoiceClient } from './voice.js';
 import { openModal, closeModal, modals } from './modals.js';
+
+/* =============================================================== tema === */
+
+const THEME_KEY = 'nexus.theme';
+
+/** 'dark' (padrão de sempre), 'light' ou 'auto' (segue o sistema). */
+export function applyTheme(mode) {
+  document.documentElement.dataset.theme = mode;
+  try { localStorage.setItem(THEME_KEY, mode); } catch { /* modo privado, sem problema */ }
+}
+
+export function getTheme() {
+  try { return localStorage.getItem(THEME_KEY) || 'dark'; } catch { return 'dark'; }
+}
+
+applyTheme(getTheme());
 
 /* ============================================================== estado === */
 
@@ -12,6 +28,7 @@ export const state = {
   dms: [],
   friends: { friends: [], incoming: [], outgoing: [], blocked: [] },
   unread: {},
+  mentioned: new Set(), // channelId -> tem mensagem nao lida que me cita
   botCommands: [],
   botUser: null,
 
@@ -32,6 +49,20 @@ export const state = {
 
 export let socket = null;
 export let voice = null;
+
+/** @meu-usuario dentro do texto me cita? Usado pra destacar e notificar diferente. */
+export function mentionsMe(content) {
+  if (!content || !state.me?.username) return false;
+  const name = state.me.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`@${name}\\b`, 'i').test(content);
+}
+
+/** Envolve @meu-usuario num span pra destacar visualmente na mensagem (html ja escapado). */
+function highlightMentions(html) {
+  if (!state.me?.username) return html;
+  const name = state.me.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return html.replace(new RegExp(`@${name}\\b`, 'gi'), (m) => `<span class="mention">${m}</span>`);
+}
 
 export const guild = (id = state.activeGuildId) => state.guilds.find((g) => g.id === id);
 export const channelById = (id) => {
@@ -308,10 +339,54 @@ async function setupGoogleAuth() {
   });
 }
 
+/** Converte a chave publica VAPID (base64url) pro formato que o PushManager espera. */
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+/**
+ * Pede permissão de notificação e inscreve esse navegador pra push. Só deve
+ * ser chamado a partir de um clique do usuário — navegadores bloqueiam (ou
+ * pioram a UX de) pedidos de permissão disparados sozinhos.
+ */
+export async function setupPush() {
+  if (!appConfig.vapidPublicKey) return toast('Notificações não estão configuradas no servidor.', 'err');
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return toast('Seu navegador não suporta notificações push.', 'err');
+  }
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') return toast('Permissão de notificação recusada.', 'err');
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(appConfig.vapidPublicKey)
+      });
+    }
+    await api.post('/push/subscribe', { subscription: sub.toJSON() });
+    toast('Notificações ativadas!', 'ok');
+  } catch (err) {
+    toast('Não deu pra ativar: ' + err.message, 'err');
+  }
+}
+
 /** Convite de servidor (?convite=) e aviso de e-mail não confirmado. */
 async function handleLaunchParams() {
   $('#verifyBanner').hidden = state.me.emailVerified || !state.me.hasEmail || !appConfig.passwordResetEnabled;
   dropParam('cadastro');
+
+  const canal = params.get('canal');
+  if (canal) {
+    dropParam('canal');
+    const channel = channelById(canal) || state.dms.find((d) => d.id === canal);
+    if (channel?.guildId) openGuild(channel.guildId);
+    if (channel) openChannel(canal);
+  }
 
   const code = params.get('convite');
   if (!code) return;
@@ -349,6 +424,7 @@ async function start() {
   state.botCommands = data.bot.commands;
   state.botUser = data.bot.user;
 
+  $('#loading').hidden = true;
   $('#auth').hidden = true;
   $('#app').hidden = false;
 
@@ -376,10 +452,13 @@ function connectSocket() {
     }
     if (message.channelId !== state.activeChannelId && message.author.id !== state.me.id) {
       state.unread[message.channelId] = (state.unread[message.channelId] || 0) + 1;
+      const mentioned = mentionsMe(message.content);
+      if (mentioned) state.mentioned.add(message.channelId);
       renderRail();
       renderSidebar();
       const channel = channelById(message.channelId);
       if (channel?.type === 'dm') toast(`💬 ${message.author.username}: ${message.content.slice(0, 60)}`);
+      else if (mentioned) toast(`🔔 ${message.author.username} te citou em #${channel?.name ?? ''}`);
     } else if (message.channelId === state.activeChannelId) {
       socket.emit('channel:read', { channelId: message.channelId });
     }
@@ -492,6 +571,7 @@ function renderRail() {
 
   for (const g of state.guilds) {
     const unread = g.channels.reduce((sum, c) => sum + (state.unread[c.id] || 0), 0);
+    const mentioned = g.channels.some((c) => state.mentioned.has(c.id));
     const button = el('button', {
       class: `rail-item ${state.activeGuildId === g.id ? 'active' : ''}`,
       title: g.name,
@@ -499,15 +579,16 @@ function renderRail() {
       onclick: () => openGuild(g.id)
     }, el('span', {}, initials(g.name)), el('span', { class: 'rail-pill' }));
 
-    if (unread) button.append(el('span', { class: 'rail-badge' }, unread > 99 ? '99+' : unread));
+    if (unread) button.append(el('span', { class: `rail-badge ${mentioned ? 'mentioned' : ''}` }, unread > 99 ? '99+' : unread));
     container.append(button);
   }
 
   const dmUnread = state.dms.reduce((sum, d) => sum + (state.unread[d.id] || 0), 0);
+  const dmMentioned = state.dms.some((d) => state.mentioned.has(d.id));
   const home = $('#railHome');
   home.classList.toggle('active', state.view === 'home');
   home.querySelector('.rail-badge')?.remove();
-  if (dmUnread) home.append(el('span', { class: 'rail-badge' }, dmUnread));
+  if (dmUnread) home.append(el('span', { class: `rail-badge ${dmMentioned ? 'mentioned' : ''}` }, dmUnread));
 }
 
 /* =========================================================== sidebar ==== */
@@ -523,7 +604,7 @@ function renderSidebar() {
     body.append(el('button', {
       class: `channel ${state.activeChannelId === null ? 'active' : ''}`,
       onclick: openHome
-    }, el('span', { class: 'glyph' }, '👥'), el('span', { class: 'name' }, 'Amigos')));
+    }, el('span', { class: 'glyph' }, icon('users', 15)), el('span', { class: 'name' }, 'Amigos')));
 
     body.append(el('div', { class: 'side-section' },
       el('div', { class: 'side-label' },
@@ -538,7 +619,7 @@ function renderSidebar() {
       },
         avatarNode(dm.recipient, { size: 24 }),
         el('span', { class: 'name' }, dm.recipient?.username || 'Desconhecido'),
-        unread ? el('span', { class: 'badge' }, unread) : null));
+        unread ? el('span', { class: `badge ${state.mentioned.has(dm.id) ? 'mentioned' : ''}` }, unread) : null));
     }
 
     if (!state.dms.length) {
@@ -574,9 +655,9 @@ function renderSidebar() {
         class: `channel ${state.activeChannelId === channel.id ? 'active' : ''}`,
         onclick: () => (channel.type === 'voice' ? joinVoice(channel) : openChannel(channel.id))
       },
-        el('span', { class: 'glyph' }, channel.type === 'voice' ? '🔊' : '#'),
+        el('span', { class: 'glyph' }, channel.type === 'voice' ? icon('volume', 15) : '#'),
         el('span', { class: 'name' }, channel.name),
-        unread ? el('span', { class: 'badge' }, unread) : null,
+        unread ? el('span', { class: `badge ${state.mentioned.has(channel.id) ? 'mentioned' : ''}` }, unread) : null,
         isAdmin ? el('span', {
           class: 'del icon-btn', title: 'Excluir canal',
           style: 'width:22px;height:22px;font-size:12px',
@@ -585,7 +666,7 @@ function renderSidebar() {
             if (!confirm(`Excluir o canal "${channel.name}"?`)) return;
             await api.del(`/channels/${channel.id}`);
           }
-        }, '✕') : null);
+        }, icon('close', 12)) : null);
       body.append(row);
 
       if (channel.type === 'voice') {
@@ -596,8 +677,8 @@ function renderSidebar() {
               avatarNode(m.user, { size: 20, status: false }),
               el('span', {}, m.user.username),
               el('span', { class: 'flags' },
-                m.state?.muted ? '🔇' : '',
-                m.state?.screen ? '🖥️' : '',
+                m.state?.muted ? icon('mic-off', 12) : '',
+                m.state?.screen ? icon('monitor', 12) : '',
                 m.state?.video ? '📷' : '')))));
         }
       }
@@ -654,6 +735,7 @@ export async function openChannel(channelId) {
   $('#input').placeholder = isDM ? `Conversar com ${channel.recipient?.username}` : `Conversar em #${channel?.name}`;
 
   state.unread[channelId] = 0;
+  state.mentioned.delete(channelId);
   socket.emit('channel:read', { channelId });
   renderRail();
   renderSidebar();
@@ -738,9 +820,9 @@ function renderHome() {
 
     for (const user of friends) {
       list.append(row(user, [
-        el('button', { class: 'icon-btn', title: 'Mensagem', onclick: () => startDM(user.id) }, '💬'),
-        el('button', { class: 'icon-btn', title: 'Ligar', onclick: () => startCall(user.id, false) }, '📞'),
-        el('button', { class: 'icon-btn', title: 'Vídeo', onclick: () => startCall(user.id, true) }, '🎥'),
+        el('button', { class: 'icon-btn', title: 'Mensagem', onclick: () => startDM(user.id) }, icon('message-circle', 16)),
+        el('button', { class: 'icon-btn', title: 'Ligar', onclick: () => startCall(user.id, false) }, icon('phone', 16)),
+        el('button', { class: 'icon-btn', title: 'Vídeo', onclick: () => startCall(user.id, true) }, icon('video', 16)),
         el('button', {
           class: 'icon-btn', title: 'Remover amigo',
           onclick: async () => {
@@ -748,7 +830,7 @@ function renderHome() {
             await api.del(`/friends/${user.id}`);
             refreshFriends();
           }
-        }, '✕')
+        }, icon('close', 14))
       ]));
     }
     if (!friends.length) {
@@ -848,18 +930,18 @@ function messageNode(message, grouped) {
     el('button', {
       class: 'icon-btn', title: 'Responder',
       onclick: () => setReply(message)
-    }, '↩'),
-    mine ? el('button', { class: 'icon-btn', title: 'Editar', onclick: () => editMessage(message) }, '✏️') : null,
+    }, icon('reply', 16)),
+    mine ? el('button', { class: 'icon-btn', title: 'Editar', onclick: () => editMessage(message) }, icon('edit', 16)) : null,
     (mine || isMod) ? el('button', {
       class: 'icon-btn', title: 'Apagar',
       onclick: () => socket.emit('message:delete', { id: message.id })
-    }, '🗑️') : null);
+    }, icon('trash', 16)) : null);
 
   const body = el('div', {});
 
   if (message.replyTo) {
     body.append(el('div', { class: 'msg-reply' },
-      el('span', {}, '↩'),
+      icon('reply', 12),
       avatarNode(message.replyTo.author, { size: 16, status: false }),
       el('strong', { style: 'font-size:12px' }, message.replyTo.author?.username ?? '—'),
       el('span', { style: 'opacity:.8' }, (message.replyTo.content || '').slice(0, 90))));
@@ -873,9 +955,10 @@ function messageNode(message, grouped) {
   }
 
   if (message.content) {
+    const mine2 = mentionsMe(message.content);
     body.append(el('div', {
-      class: 'msg-body',
-      html: renderMarkdown(message.content) + (message.editedAt ? '<span class="msg-edited">(editado)</span>' : '')
+      class: `msg-body ${mine2 ? 'has-mention' : ''}`,
+      html: highlightMentions(renderMarkdown(message.content)) + (message.editedAt ? '<span class="msg-edited">(editado)</span>' : '')
     }));
   }
 
@@ -1058,7 +1141,7 @@ function renderStage() {
         node = el('div', { class: 'tile', dataset: { tile: key } },
           el('video', { autoplay: true, playsInline: true, muted: tile.self }),
           el('div', { class: 'tile-name' }, `${tile.user?.username ?? ''}`),
-          kind === 'screen' ? el('div', { class: 'tile-tag' }, '🖥️ tela') : null);
+          kind === 'screen' ? el('div', { class: 'tile-tag' }, icon('monitor', 12), 'tela') : null);
         grid.append(node);
       }
       const video = node.querySelector('video');
@@ -1088,9 +1171,13 @@ function renderStage() {
   }
 
   $('#stageMic').classList.toggle('active', !voice.state.muted);
-  $('#stageMic').textContent = voice.state.muted ? '🔇 Mudo' : '🎙️ Falando';
+  $('#stageMic .pill-icon').replaceChildren(icon(voice.state.muted ? 'mic-off' : 'mic', 16));
+  $('#stageMic .pill-label').textContent = voice.state.muted ? 'Mudo' : 'Falando';
   $('#stageCam').classList.toggle('active', voice.state.video);
   $('#stageScreen').classList.toggle('active', voice.state.screen);
+
+  const anyScreenShared = tiles.some((t) => t.screen);
+  $('#stageFullscreen').hidden = !anyScreenShared && !document.fullscreenElement;
 }
 
 /** Reproduz o áudio remoto fora da grade (funciona mesmo sem vídeo). */
@@ -1160,11 +1247,53 @@ function showRing() {
 
 /* ============================================================= binds ==== */
 
+/** Substitui os emojis usados como ícone de UI por SVGs de traço. */
+function mountStaticIcons() {
+  const map = {
+    btnAddGuild: ['plus', 20],
+    guildMenuChevron: ['chevron-down', 16],
+    btnScreen: ['monitor', 16],
+    btnCam: ['video', 16],
+    btnHangup: ['phone', 16],
+    btnMic: ['mic', 16],
+    btnDeaf: ['headphones', 16],
+    btnSettings: ['sliders', 16],
+    verifyDismiss: ['close', 14],
+    btnBack: ['chevron-left', 18],
+    btnCall: ['phone', 16],
+    btnVideoCall: ['video', 16],
+    btnMembers: ['users', 16],
+    replyCancel: ['close', 14]
+  };
+  for (const [id, [name, size]] of Object.entries(map)) {
+    const node = document.getElementById(id);
+    if (node) node.replaceChildren(icon(name, size));
+  }
+  $('#composer .send').replaceChildren(icon('send', 16));
+  $('#stageCam .pill-icon').replaceChildren(icon('video', 16));
+  $('#stageScreen .pill-icon').replaceChildren(icon('monitor', 16));
+  $('#stageFullscreen .pill-icon').replaceChildren(icon('maximize', 16));
+}
+
 function bindUI() {
+  mountStaticIcons();
   $('#railHome').addEventListener('click', openHome);
-  $('#btnCreateGuild').addEventListener('click', () => openModal(modals.createGuild()));
-  $('#btnJoinGuild').addEventListener('click', () => openModal(modals.joinGuild()));
+  $('#btnAddGuild').addEventListener('click', () => openModal(modals.addGuild()));
   $('#btnBack').addEventListener('click', () => document.getElementById('app').classList.remove('chat-open'));
+
+  $('#stageFullscreen').addEventListener('click', () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      $('#stage').requestFullscreen?.().catch(() => toast('Não consegui abrir em tela cheia.', 'err'));
+    }
+  });
+  document.addEventListener('fullscreenchange', () => {
+    const active = !!document.fullscreenElement;
+    $('#stage').classList.toggle('is-fullscreen', active);
+    $('#stageFullscreen .pill-label').textContent = active ? 'Sair da tela cheia' : 'Tela cheia';
+    $('#stageFullscreen .pill-icon').replaceChildren(icon(active ? 'minimize' : 'maximize', 16));
+  });
 
   $('#sidebarHeader').addEventListener('click', () => {
     if (state.view === 'guild') openModal(modals.guildMenu(guild()));
@@ -1203,6 +1332,11 @@ function bindUI() {
   });
   $('#stageLeave').addEventListener('click', leaveVoice);
   $('#stageCollapse').addEventListener('click', () => { state.stageCollapsed = true; renderStage(); });
+  $('#voicePanel').addEventListener('click', (event) => {
+    if (event.target.closest('.voice-actions')) return; // botões próprios já tratados acima
+    state.stageCollapsed = !state.stageCollapsed;
+    renderStage();
+  });
 
   $('#btnCall').addEventListener('click', () => {
     const channel = channelById(state.activeChannelId);
@@ -1304,8 +1438,9 @@ setupAuth();
 bindUI();
 
 if (token.get()) {
-  start().catch(() => { token.clear(); $('#auth').hidden = false; });
+  start().catch(() => { token.clear(); $('#loading').hidden = true; $('#auth').hidden = false; });
 } else {
+  $('#loading').hidden = true;
   $('#auth').hidden = false;
 }
 

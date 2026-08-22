@@ -1,4 +1,4 @@
-# ⬢ Nexus
+# ⬢ nexus67
 
 Plataforma de comunidade no estilo Discord: **servidores com canais**, **amizades e mensagens diretas**, **chamadas de voz e vídeo com compartilhamento de tela** e um **bot completo já embutido no app** — sem depender de nenhum serviço externo.
 

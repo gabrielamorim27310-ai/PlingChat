@@ -324,7 +324,7 @@ function botPanel(guild) {
 
   return shell({
     title: '🤖 Nexy — bot integrado',
-    subtitle: 'Moderação, economia, níveis, música e diversão, tudo embutido no app.',
+    subtitle: 'Moderação, economia, níveis, música e diversão, tudo embutido no nexus67.',
     body,
     foot: [
       isAdmin ? el('button', { class: 'btn btn-ghost', onclick: () => openModal(guildSettings(guild)) }, 'Configurar') : null,

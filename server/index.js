@@ -76,7 +76,7 @@ function localAddresses() {
 server.listen(PORT, () => {
   const scheme = useHttps ? 'https' : 'http';
   console.log('');
-  console.log('  ⬢  Nexus rodando');
+  console.log('  ⬢  nexus67 rodando');
   console.log(`     local:  ${scheme}://localhost:${PORT}`);
   for (const addr of localAddresses()) console.log(`     rede:   ${scheme}://${addr}:${PORT}`);
   if (!useHttps) {

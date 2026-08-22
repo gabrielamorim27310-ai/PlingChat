@@ -251,7 +251,7 @@ const commands = [
     run(ctx) {
       return ctx.reply('', ctx.embed({
         color: ctx.COLORS.gold,
-        title: '🛒 Loja do Nexus',
+        title: '🛒 Loja do nexus67',
         description: SHOP.map((i) => `**${i.name}** — ${fmt(i.price)} 🪙\n\`${i.id}\` · ${i.description}`).join('\n\n'),
         footer: `Compre com ${ctx.prefix}comprar <id>`
       }));

@@ -6,8 +6,8 @@
   "type": "commonjs",
   "main": "server/index.js",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "dev": "node --env-file-if-exists=.env --watch server/index.js",
     "build:web": "node scripts/build-web.js"
   },
   "dependencies": {

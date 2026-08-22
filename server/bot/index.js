@@ -39,7 +39,7 @@ function ensureBotUser() {
   if (!u) {
     u = store.createUser({ id: BOT_ID, username: 'Nexy', email: null, passwordHash: null, isBot: true });
     run("UPDATE users SET avatar_color = '#5865f2', status = 'online', bio = ? WHERE id = ?",
-      'Bot oficial do nexus67. Digite !ajuda para ver tudo que eu faco.', BOT_ID);
+      'Bot oficial do PlingChat. Digite !ajuda para ver tudo que eu faco.', BOT_ID);
   } else {
     run("UPDATE users SET status = 'online' WHERE id = ?", BOT_ID);
   }

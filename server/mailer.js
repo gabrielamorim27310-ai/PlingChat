@@ -12,7 +12,7 @@ const store = require('./store');
  */
 
 const API_KEY = process.env.RESEND_API_KEY || '';
-const FROM = process.env.MAIL_FROM || 'nexus67 <onboarding@resend.dev>';
+const FROM = process.env.MAIL_FROM || 'PlingChat <onboarding@resend.dev>';
 const APP_URL = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
 
 const isEnabled = () => !!API_KEY;
@@ -68,7 +68,7 @@ function consumeToken(token, kind) {
 const layout = (title, body, cta) => `
 <div style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#0b0d12;padding:32px;color:#e6e9f0">
   <div style="max-width:520px;margin:0 auto;background:#161a23;border:1px solid #262c3a;border-radius:14px;padding:32px">
-    <div style="color:#7b86ff;font-weight:700;font-size:18px;margin-bottom:20px">⬢ nexus67</div>
+    <div style="color:#7b86ff;font-weight:700;font-size:18px;margin-bottom:20px">⬢ PlingChat</div>
     <h1 style="font-size:20px;margin:0 0 12px">${title}</h1>
     <p style="color:#9aa3b5;font-size:14px;line-height:1.6;margin:0 0 24px">${body}</p>
     ${cta ? `<a href="${cta.url}" style="display:inline-block;background:#5865f2;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;font-size:14px">${cta.label}</a>
@@ -81,7 +81,7 @@ async function sendVerification(user) {
   const token = createToken(user.id, 'verify');
   await send({
     to: user.email,
-    subject: 'Confirme seu e-mail no nexus67',
+    subject: 'Confirme seu e-mail no PlingChat',
     html: layout(
       `Olá, ${user.username}!`,
       'Confirme seu endereço de e-mail para garantir que você consegue recuperar sua conta depois. O link vale por 24 horas.',
@@ -96,7 +96,7 @@ async function sendPasswordReset(user) {
   const token = createToken(user.id, 'reset');
   await send({
     to: user.email,
-    subject: 'Redefinir sua senha do nexus67',
+    subject: 'Redefinir sua senha do PlingChat',
     html: layout(
       `Olá, ${user.username}`,
       'Recebemos um pedido para redefinir sua senha. O link vale por 1 hora. Se não foi você, pode ignorar este e-mail — sua senha continua a mesma.',

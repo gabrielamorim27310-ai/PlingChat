@@ -46,7 +46,7 @@ function assertUsable(code) {
   if (isOpen()) return null;
 
   const row = findCode(code);
-  if (!row) throw new Error('Código de convite inválido. Peça um a quem já usa o nexus67.');
+  if (!row) throw new Error('Código de convite inválido. Peça um a quem já usa o PlingChat.');
   if (row.revoked) throw new Error('Este convite foi revogado.');
   if (row.uses >= row.max_uses) throw new Error('Este convite já foi usado.');
   return row;

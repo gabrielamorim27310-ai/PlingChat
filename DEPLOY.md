@@ -1,5 +1,7 @@
 # Implantação
 
+> O produto se chama **PlingChat**, mas os domínios (`nexus67.vercel.app`, o repositório no GitHub) continuam com o nome antigo — trocar isso quebraria os links que já existem. Onde este documento cita `nexus67.vercel.app`, é o domínio real, não um erro de digitação.
+
 Frontend estático na **Vercel**, backend com processo persistente no **Render**.
 
 O backend não roda em plataforma serverless: ele mantém conexões WebSocket abertas, guarda estado em memória (salas de voz, sinalização WebRTC, filas de música) e grava num arquivo SQLite. Por isso a divisão.
@@ -80,7 +82,7 @@ Sem isso configurado, **não existe recuperação de senha** — quem esquecer a
 | Variável | Valor |
 |---|---|
 | `RESEND_API_KEY` | a chave gerada |
-| `MAIL_FROM` | `nexus67 <nao-responda@seudominio.com>` |
+| `MAIL_FROM` | `PlingChat <nao-responda@seudominio.com>` |
 | `APP_URL` | `https://nexus67.vercel.app` — usado para montar os links do e-mail |
 
 Sem domínio verificado, o Resend só entrega para o e-mail da própria conta; para valer em produção, verifique um domínio.

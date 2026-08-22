@@ -1,4 +1,4 @@
-# Backend do nexus67 (Socket.IO + SQLite). Precisa de processo persistente e
+# Backend do PlingChat (Socket.IO + SQLite). Precisa de processo persistente e
 # disco montado — por isso nao roda em plataforma serverless.
 services:
   - type: web

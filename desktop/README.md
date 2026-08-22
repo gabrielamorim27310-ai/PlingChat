@@ -1,6 +1,6 @@
-# nexus67 no PC
+# PlingChat no PC
 
-Não é um app separado — é o mesmo `https://nexus67.vercel.app` numa janela sem barra de endereço, abas nem menu de navegador. O login, as mensagens e os dados são exatamente os mesmos de quando você usa pelo Chrome/Edge.
+Não é um app separado — é o mesmo `https://nexus67.vercel.app` (o domínio ainda tem o nome antigo, o produto se chama PlingChat) numa janela sem barra de endereço, abas nem menu de navegador. O login, as mensagens e os dados são exatamente os mesmos de quando você usa pelo Chrome/Edge.
 
 ## Rodar em modo desenvolvimento
 
@@ -18,7 +18,7 @@ Abre uma janela carregando o site de produção. Câmera, microfone e compartilh
 
 ```
 npm run icons     # só precisa rodar de novo se trocar build/icon.svg
-npm run dist:win  # gera dist/nexus67 Setup <versão>.exe
+npm run dist:win  # gera dist/PlingChat Setup <versão>.exe
 npm run dist:mac  # gera um .dmg (só builda num Mac)
 npm run dist:linux # gera um .AppImage
 ```

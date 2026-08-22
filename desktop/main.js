@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * App de mesa do nexus67. Não é um app nativo separado — é o mesmo site de
+ * App de mesa do PlingChat. Não é um app nativo separado — é o mesmo site de
  * produção (https://nexus67.vercel.app) dentro de uma janela sem barra de
  * endereço, abas ou menu de navegador. O backend continua sendo o Render;
  * esse processo não guarda nem processa nada por conta própria.

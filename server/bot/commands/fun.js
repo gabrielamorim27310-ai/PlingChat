@@ -56,7 +56,7 @@ function smallTalk(text, user) {
   }
   if (/(obrigad|valeu|vlw)/.test(t)) return pick(['Disponha! 😄', 'Sempre as ordens.', 'Por nada!']);
   if (/(quem e voce|quem é você|o que voce faz)/.test(t)) {
-    return 'Sou o **Nexy**, o bot que ja vem embutido no nexus67. Moderacao, economia, niveis, musica e diversao — tudo em `!ajuda`.';
+    return 'Sou o **Nexy**, o bot que ja vem embutido no PlingChat. Moderacao, economia, niveis, musica e diversao — tudo em `!ajuda`.';
   }
   if (/\?$/.test(t.trim())) return pick(EIGHT_BALL);
   return null;

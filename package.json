@@ -1,8 +1,8 @@
 {
-  "name": "nexus67",
+  "name": "plingchat",
   "version": "1.0.0",
   "private": true,
-  "description": "Plataforma de chat, voz e video com servidores, amizades e bot integrado",
+  "description": "PlingChat — plataforma de chat, voz e video com servidores, amizades e bot integrado",
   "type": "commonjs",
   "main": "server/index.js",
   "scripts": {

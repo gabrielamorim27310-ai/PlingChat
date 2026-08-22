@@ -14,7 +14,7 @@ const store = require('./store');
 
 const PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
 const PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
-const SUBJECT = process.env.VAPID_SUBJECT || 'mailto:nao-responda@nexus67.app';
+const SUBJECT = process.env.VAPID_SUBJECT || 'mailto:nao-responda@PlingChat.app';
 
 const isEnabled = () => !!(PUBLIC_KEY && PRIVATE_KEY);
 

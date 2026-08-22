@@ -385,7 +385,7 @@ function botPanel(guild) {
 
   return shell({
     title: '🤖 Nexy — bot integrado',
-    subtitle: 'Moderação, economia, níveis, música e diversão, tudo embutido no nexus67.',
+    subtitle: 'Moderação, economia, níveis, música e diversão, tudo embutido no PlingChat.',
     body,
     foot: [
       isAdmin ? el('button', { class: 'btn btn-ghost', onclick: () => openModal(guildSettings(guild)) }, 'Configurar') : null,
@@ -465,7 +465,7 @@ function appInvites() {
 
   return shell({
     title: '🎟️ Convites de cadastro',
-    subtitle: 'O nexus67 é fechado: só cria conta quem tiver um código seu.',
+    subtitle: 'O PlingChat é fechado: só cria conta quem tiver um código seu.',
     body: el('div', {},
       list,
       el('div', { style: 'margin-top:18px;padding-top:16px;border-top:1px solid var(--line)' },

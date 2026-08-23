@@ -154,6 +154,20 @@ function attachRealtime(server, app, { originAllowed = () => true } = {}) {
     for (const id of userIds) io.to(userRoom(id)).emit('friends:update', await store.listFriends(id));
   };
 
+  /** Reavisa amigos, servidores em comum e as outras abas/dispositivos da
+   * própria pessoa quando o perfil dela muda (nome, foto, cor, bio...) --
+   * reaproveita o mesmo evento "presence", que já manda o user inteiro. */
+  app.locals.broadcastProfileUpdate = async (userId) => {
+    const user = await store.getUser(userId);
+    if (user) await broadcastPresence(userId, user.status);
+  };
+
+  /** Reavisa quem estiver vendo o canal que uma mensagem mudou (ex: embed de convite resolvido). */
+  app.locals.broadcastMessageUpdate = async (message) => {
+    const channel = await store.getChannel(message.channelId);
+    for (const room of await channelAudience(channel)) io.to(room).emit('message:update', message);
+  };
+
   app.locals.registerDM = async (channelId, userIds) => {
     const channel = await store.getChannel(channelId);
     for (const s of io.sockets.sockets.values()) {

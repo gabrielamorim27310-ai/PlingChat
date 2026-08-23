@@ -148,6 +148,7 @@ router.patch('/me', auth.requireAuth, wrap(async (req, res) => {
   const user = await store.updateProfile(req.user.id, {
     avatarColor, avatarUrl: nextAvatarUrl, customStatus, bio, status
   });
+  req.app.locals.broadcastProfileUpdate?.(req.user.id);
   res.json({ user: store.publicUser(user) });
 }));
 
@@ -299,6 +300,7 @@ router.post('/messages/:id/guild-invite', auth.requireAuth, wrap(async (req, res
   const updated = await store.setMessageEmbed(message.id, {
     ...embed, guildInvite: { ...embed.guildInvite, status: accept ? 'accepted' : 'declined' }
   });
+  req.app.locals.broadcastMessageUpdate?.(updated);
 
   res.json({ ok: true, message: updated, guild: fullGuild });
 }));

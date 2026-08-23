@@ -521,13 +521,52 @@ function connectSocket() {
     renderTyping();
   });
 
-  socket.on('presence', ({ userId, status }) => {
+  socket.on('presence', ({ userId, status, user }) => {
+    // "user" vem preenchido tanto num simples online/offline quanto quando o
+    // perfil muda (nome, foto, cor, bio) -- reaproveita o mesmo evento pra
+    // não precisar de F5 quando alguém troca a foto, por exemplo.
+    const patchProfile = (obj) => {
+      if (!user) return;
+      Object.assign(obj, {
+        username: user.username, avatarColor: user.avatarColor, avatarUrl: user.avatarUrl,
+        customStatus: user.customStatus, bio: user.bio
+      });
+      if ('displayName' in obj) obj.displayName = obj.nickname || user.username;
+    };
+
     for (const g of state.guilds) {
       const member = g.members.find((m) => m.id === userId);
-      if (member) member.status = status;
+      if (member) { member.status = status; patchProfile(member); }
     }
-    for (const dm of state.dms) if (dm.recipient?.id === userId) dm.recipient.status = status;
-    for (const f of state.friends.friends) if (f.id === userId) f.status = status;
+    for (const dm of state.dms) {
+      if (dm.recipient?.id === userId) { dm.recipient.status = status; patchProfile(dm.recipient); }
+    }
+    for (const f of state.friends.friends) if (f.id === userId) { f.status = status; patchProfile(f); }
+
+    if (user && userId === state.me.id) {
+      state.me = { ...state.me, ...user };
+      renderMe();
+    }
+
+    // Só reflete no author das mensagens já carregadas (e só re-renderiza)
+    // quando algo realmente mudou -- senão todo blink de online/offline de
+    // quem já postou no canal ativo forçaria um re-render à toa.
+    let touchedActiveChannel = false;
+    if (user) {
+      for (const [channelId, list] of state.messages) {
+        for (const m of list) {
+          if (m.author?.id !== userId) continue;
+          const changed = m.author.username !== user.username || m.author.avatarUrl !== user.avatarUrl
+            || m.author.avatarColor !== user.avatarColor;
+          if (changed) {
+            Object.assign(m.author, user);
+            if (channelId === state.activeChannelId) touchedActiveChannel = true;
+          }
+        }
+      }
+    }
+    if (touchedActiveChannel) renderMessages();
+
     renderMembers();
     if (state.view === 'home') { renderSidebar(); renderHome(); }
   });
@@ -1433,6 +1472,7 @@ function mountStaticIcons() {
     btnCall: ['phone', 16],
     btnVideoCall: ['video', 16],
     btnMembers: ['users', 16],
+    btnNavToggle: ['sidebar', 17],
     replyCancel: ['close', 14],
     membersInviteBtn: ['user-plus', 15]
   };
@@ -1539,6 +1579,13 @@ function bindUI() {
   $('#btnMembers').addEventListener('click', () => { $('#membersPane').hidden = !$('#membersPane').hidden; });
   $('#membersSearch').addEventListener('input', debounce(renderMembers, 120));
   $('#membersInviteBtn').addEventListener('click', () => { const g = guild(); if (g) openModal(modals.invite(g)); });
+
+  const appEl = document.getElementById('app');
+  if (localStorage.getItem('nexus.navCollapsed') === 'on') appEl.classList.add('nav-collapsed');
+  $('#btnNavToggle').addEventListener('click', () => {
+    const collapsed = appEl.classList.toggle('nav-collapsed');
+    localStorage.setItem('nexus.navCollapsed', collapsed ? 'on' : 'off');
+  });
   $('#btnBotPanel').addEventListener('click', () => openModal(modals.botPanel(guild())));
 
   $('#btnMic').addEventListener('click', () => {

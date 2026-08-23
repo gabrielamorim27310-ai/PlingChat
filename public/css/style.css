@@ -163,6 +163,13 @@ button { background: none; border: 0; cursor: pointer; }
 
 /* =============================================================== app ==== */
 .app { display: grid; grid-template-columns: var(--rail-w) var(--side-w) 1fr auto; height: 100%; transition: grid-template-columns .16s ease; }
+/* Coluna fixa por elemento -- sem isso, esconder rail/sidebar com
+   display:none faz o grid reencaixar main/members nas colunas vagas em vez
+   de manter a 3ª/4ª coluna, e main acaba com largura 0. */
+.rail { grid-column: 1; }
+.sidebar { grid-column: 2; }
+.main { grid-column: 3; }
+.members { grid-column: 4; }
 /* colapsa rail + sidebar juntos (o botão que faz isso mora no cabeçalho do
    chat, que nunca faz parte dessas colunas -- então continua alcançável
    pra reabrir, não importa o que esteja colapsado). */
@@ -599,6 +606,10 @@ button { background: none; border: 0; cursor: pointer; }
 /* ------------------------------------------------------------ mobile --- */
 @media (max-width: 860px) {
   .app { grid-template-columns: var(--rail-w) 1fr; }
+  /* só 2 colunas reais aqui (sidebar/members viram overlay abaixo) --
+     sem isso .main herdaria grid-column:3 da regra desktop e cairia numa
+     3ª coluna implícita em vez da 2ª (1fr) que existe de verdade. */
+  .main { grid-column: 2; }
   .sidebar { position: absolute; left: var(--rail-w); top: 0; bottom: 0; width: var(--side-w); z-index: 20; }
   .app.chat-open .sidebar { display: none; }
   .app:not(.chat-open) .main { display: none; }

@@ -17,6 +17,17 @@ const MODE = (process.env.SIGNUP_MODE || 'invite').toLowerCase() === 'open' ? 'o
 
 const MAX_ACTIVE_PER_USER = Number(process.env.MAX_INVITES_PER_USER) || 5;
 
+// Convite sem limite real de usos (não existe "ilimitado" numa coluna
+// INTEGER, então usa um número grande o bastante pra nunca bater na prática).
+const UNLIMITED_USES = 1_000_000;
+
+// Dono do PlingChat: sem limite nenhum na hora de gerar convite -- nem de
+// quantos convites ativos, nem de quantos usos cada um tem. Todo mundo já
+// não tem mais limite de usos por convite (isso agora é fixo/ilimitado pra
+// todo mundo); o que separa o dono dos outros é só o limite de QUANTOS
+// convites cada um pode ter ativos ao mesmo tempo.
+const OWNER_USER_ID = process.env.OWNER_USER_ID || 'mt5936c4001oj1l'; // Gabriel#5686
+
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 const userCount = async () => (await get('SELECT COUNT(*) AS n FROM users WHERE is_bot = 0')).n;
@@ -64,19 +75,21 @@ async function consume(code, userId) {
   return row;
 }
 
-async function createCode(userId, { note = null, maxUses = 1 } = {}) {
-  const active = (await get(
-    'SELECT COUNT(*) AS n FROM signup_codes WHERE created_by = ? AND revoked = 0 AND uses < max_uses',
-    userId
-  )).n;
-  if (active >= MAX_ACTIVE_PER_USER) {
-    throw new Error(`Você já tem ${MAX_ACTIVE_PER_USER} convites ativos. Revogue um antes de criar outro.`);
+async function createCode(userId, { note = null } = {}) {
+  if (userId !== OWNER_USER_ID) {
+    const active = (await get(
+      'SELECT COUNT(*) AS n FROM signup_codes WHERE created_by = ? AND revoked = 0 AND uses < max_uses',
+      userId
+    )).n;
+    if (active >= MAX_ACTIVE_PER_USER) {
+      throw new Error(`Você já tem ${MAX_ACTIVE_PER_USER} convites ativos. Revogue um antes de criar outro.`);
+    }
   }
 
   const code = await generateCode();
   await run(
     'INSERT INTO signup_codes (code, created_by, note, max_uses, uses, created_at) VALUES (?, ?, ?, ?, 0, ?)',
-    code, userId, note, Math.min(Math.max(Number(maxUses) || 1, 1), 10), Date.now()
+    code, userId, note, UNLIMITED_USES, Date.now()
   );
   return findCode(code);
 }
@@ -100,6 +113,6 @@ const listCodes = async (userId) =>
     }));
 
 module.exports = {
-  MODE, MAX_ACTIVE_PER_USER,
+  MODE, MAX_ACTIVE_PER_USER, OWNER_USER_ID,
   isOpen, assertUsable, consume, createCode, revokeCode, listCodes, normalize
 };

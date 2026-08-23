@@ -497,12 +497,14 @@ function botPanel(guild) {
 function appInvites() {
   const list = el('div', {});
   const note = el('input', { type: 'text', maxlength: 40, placeholder: 'Para quem é? (opcional)' });
-  const uses = el('select', {},
-    el('option', { value: '1' }, '1 uso'),
-    el('option', { value: '3' }, '3 usos'),
-    el('option', { value: '10' }, '10 usos'));
+  const subtitle = el('p', { style: 'color:var(--text-mute);font-size:13px;margin-top:4px' });
+  let limits = { max: 0, unlimited: false };
 
-  const render = (codes, max) => {
+  const render = (codes) => {
+    subtitle.textContent = limits.unlimited
+      ? 'Convites sem limite de usos nem de quantos você pode ter ativos.'
+      : `Cada convite não tem limite de usos — o limite é de até ${limits.max} convites ativos ao mesmo tempo.`;
+
     list.replaceChildren();
     if (!codes.length) {
       list.append(el('p', { style: 'color:var(--text-mute);font-size:13px;padding:12px 0' },
@@ -514,7 +516,7 @@ function appInvites() {
         el('code', { class: item.active ? '' : 'used' }, item.code),
         el('span', { style: 'color:var(--text-mute);font-size:12px' },
           item.note ? `${item.note} · ` : '',
-          item.revoked ? 'revogado' : `${item.uses}/${item.maxUses} usados`),
+          item.revoked ? 'revogado' : `usado ${item.uses}x`),
         el('div', { class: 'acts' },
           item.active ? el('button', {
             class: 'icon-btn', title: 'Copiar link de cadastro',
@@ -536,7 +538,7 @@ function appInvites() {
             onclick: async () => {
               try {
                 const data = await api.del(`/invites/${item.code}`);
-                render(data.codes, max);
+                render(data.codes);
                 toast('Convite revogado.', 'ok');
               } catch (err) {
                 toast(err.message, 'err');
@@ -548,7 +550,7 @@ function appInvites() {
 
   const create = async () => {
     try {
-      const data = await api.post('/invites', { note: note.value.trim() || null, maxUses: Number(uses.value) });
+      const data = await api.post('/invites', { note: note.value.trim() || null });
       note.value = '';
       render(data.codes);
       toast(`Convite ${data.code} criado!`, 'ok');
@@ -558,17 +560,17 @@ function appInvites() {
   };
 
   api.get('/invites')
-    .then(({ codes, max }) => render(codes, max))
+    .then(({ codes, max, unlimited }) => { limits = { max, unlimited }; render(codes); })
     .catch((err) => toast(err.message, 'err'));
 
   return shell({
     title: '🎟️ Convites de cadastro',
     subtitle: 'O PlingChat é fechado: só cria conta quem tiver um código seu.',
     body: el('div', {},
+      subtitle,
       list,
       el('div', { style: 'margin-top:18px;padding-top:16px;border-top:1px solid var(--line)' },
         field('Anotação', note),
-        field('Quantos usos', uses),
         el('button', { class: 'btn btn-primary btn-block', onclick: create }, 'Gerar novo convite'))),
     foot: [el('button', { class: 'btn btn-ghost', onclick: closeModal }, 'Fechar')]
   });

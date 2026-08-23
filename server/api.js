@@ -89,11 +89,15 @@ router.post('/auth/resend-verification', auth.requireAuth, rl.limit(rl.presets.f
 /* ----------------------------------------------------------- convites */
 
 router.get('/invites', auth.requireAuth, wrap(async (req, res) => {
-  res.json({ codes: await invites.listCodes(req.user.id), max: invites.MAX_ACTIVE_PER_USER });
+  res.json({
+    codes: await invites.listCodes(req.user.id),
+    max: invites.MAX_ACTIVE_PER_USER,
+    unlimited: req.user.id === invites.OWNER_USER_ID
+  });
 }));
 
 router.post('/invites', auth.requireAuth, rl.limit(rl.presets.invite), wrap(async (req, res) => {
-  const code = await invites.createCode(req.user.id, { note: req.body?.note || null, maxUses: req.body?.maxUses });
+  const code = await invites.createCode(req.user.id, { note: req.body?.note || null });
   res.json({ code: code.code, codes: await invites.listCodes(req.user.id) });
 }));
 

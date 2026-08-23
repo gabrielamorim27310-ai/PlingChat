@@ -1045,7 +1045,7 @@ function messageNode(message, grouped) {
     }));
   }
 
-  if (message.embed) body.append(embedNode(message.embed));
+  if (message.embed) body.append(embedNode(message.embed, message));
 
   if (message.reactions?.length) {
     body.append(el('div', { class: 'reactions' },
@@ -1061,8 +1061,36 @@ function messageNode(message, grouped) {
     tools);
 }
 
-function embedNode(embed) {
+async function respondGuildInvite(message, accept) {
+  try {
+    const { message: updated, guild } = await api.post(`/messages/${message.id}/guild-invite`, { accept });
+    const list = state.messages.get(updated.channelId);
+    const idx = list?.findIndex((m) => m.id === updated.id);
+    if (list && idx > -1) list[idx] = updated;
+    renderMessages();
+    if (accept && guild) {
+      state.guilds.push(guild);
+      renderRail();
+      toast(`Você entrou em "${guild.name}"!`, 'ok');
+    }
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+function embedNode(embed, message) {
   const node = el('div', { class: 'embed', style: `border-left-color:${embed.color || '#5865f2'}` });
+
+  if (embed.guildInvite) {
+    const { guildName, status } = embed.guildInvite;
+    node.append(el('div', { class: 'invite-embed-status' },
+      status === 'pending'
+        ? el('div', { class: 'invite-embed-actions' },
+            el('button', { class: 'btn btn-primary', onclick: () => respondGuildInvite(message, true) }, `Entrar em ${guildName}`),
+            el('button', { class: 'btn btn-ghost', onclick: () => respondGuildInvite(message, false) }, 'Recusar'))
+        : el('div', { class: `invite-embed-resolved ${status}` },
+            status === 'accepted' ? `✓ Você entrou em ${guildName}` : '✕ Convite recusado')));
+  }
 
   if (embed.avatarOf) {
     node.append(el('div', { class: 'embed-avatar' }, avatarNode(embed.avatarOf, { size: 72, status: false })));

@@ -222,13 +222,13 @@ function invite(guild) {
           onclick: async (event) => {
             try {
               await api.post(`/guilds/${guild.id}/invite-friend`, { userId: friend.id });
-              row.replaceWith(el('div', { class: 'invite-friend-row done' }, `✓ ${friend.username} entrou`));
-              toast(`${friend.username} entrou no servidor!`, 'ok');
+              row.replaceWith(el('div', { class: 'invite-friend-row done' }, `✓ Convite enviado a ${friend.username}`));
+              toast(`Convite enviado! ${friend.username} decide se entra.`, 'ok');
             } catch (err) {
               toast(err.message, 'err');
             }
           }
-        }, 'Adicionar'));
+        }, 'Convidar'));
       friendList.append(row);
     }
   };

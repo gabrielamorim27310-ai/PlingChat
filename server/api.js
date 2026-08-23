@@ -231,6 +231,7 @@ router.post('/guilds/join', auth.requireAuth, wrap(async (req, res) => {
 }));
 
 /** Convite direto: adiciona um amigo já existente ao servidor, sem precisar de código. */
+/** Manda um convite pro amigo aceitar ou nao -- nao entra sozinho no servidor. */
 router.post('/guilds/:id/invite-friend', auth.requireAuth, wrap(async (req, res) => {
   const guild = await store.getGuild(req.params.id);
   if (!guild || !(await store.getMember(guild.id, req.user.id))) throw new Error('Sem acesso a este servidor');
@@ -247,10 +248,59 @@ router.post('/guilds/:id/invite-friend', auth.requireAuth, wrap(async (req, res)
     }
   }
 
-  await store.addMember(guild.id, friendId);
-  await store.logAudit(guild.id, req.user.id, 'member_invited', friendId);
-  req.app.locals.onMemberJoin?.(guild.id, friendId);
-  res.json({ ok: true, members: await store.listMembers(guild.id) });
+  const dmChannel = await store.getOrCreateDM(req.user.id, friendId);
+  const message = await botModule.say(dmChannel.id, '', {
+    color: botModule.COLORS.brand,
+    title: '🎟️ Convite para servidor',
+    description: `**${req.user.username}** te convidou para entrar em **${guild.name}**.`,
+    guildInvite: { guildId: guild.id, guildName: guild.name, status: 'pending' }
+  });
+  req.app.locals.registerDM?.(dmChannel.id, [req.user.id, friendId]);
+
+  res.json({ ok: true, message });
+}));
+
+/** Aceita ou recusa um convite de servidor recebido por DM. */
+router.post('/messages/:id/guild-invite', auth.requireAuth, wrap(async (req, res) => {
+  const message = await store.getMessage(req.params.id);
+  const embed = message?.embed ? JSON.parse(message.embed) : null;
+  if (!embed?.guildInvite) throw new Error('Convite não encontrado');
+  if (embed.guildInvite.status !== 'pending') throw new Error('Esse convite já foi respondido');
+
+  const channel = await store.getChannel(message.channel_id);
+  if (!channel || channel.type !== 'dm') throw new Error('Convite inválido');
+  const participants = await store.dmParticipants(channel.id);
+  if (!participants.includes(req.user.id) || req.user.id === message.author_id) {
+    throw new Error('Você não pode responder esse convite');
+  }
+
+  const accept = !!req.body?.accept;
+  const guildId = embed.guildInvite.guildId;
+  let fullGuild = null;
+
+  if (accept) {
+    const guild = await store.getGuild(guildId);
+    if (!guild) throw new Error('Esse servidor não existe mais');
+    if (await store.isBanned(guildId, req.user.id)) throw new Error('Você está banido deste servidor');
+    if (!(await store.getMember(guildId, req.user.id))) {
+      await store.addMember(guildId, req.user.id);
+      await store.logAudit(guildId, message.author_id, 'member_invited', req.user.id);
+      req.app.locals.onMemberJoin?.(guildId, req.user.id);
+    }
+    fullGuild = {
+      ...store.guildPayload(guild),
+      channels: await store.listChannels(guildId),
+      members: await store.listMembers(guildId),
+      settings: await store.getSettings(guildId),
+      myRole: (await store.getMember(guildId, req.user.id))?.role ?? 'member'
+    };
+  }
+
+  const updated = await store.setMessageEmbed(message.id, {
+    ...embed, guildInvite: { ...embed.guildInvite, status: accept ? 'accepted' : 'declined' }
+  });
+
+  res.json({ ok: true, message: updated, guild: fullGuild });
 }));
 
 /** Auto-cadastro por e-mail corporativo verificado: sem convite, sem código. */

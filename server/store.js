@@ -356,6 +356,12 @@ async function editMessage(id, content) {
   return messagePayload(await get('SELECT * FROM messages WHERE id = ?', id));
 }
 
+/** Atualiza so o embed de uma mensagem (usado por embeds interativos, tipo convite de servidor). */
+async function setMessageEmbed(id, embed) {
+  await run('UPDATE messages SET embed = ? WHERE id = ?', embed ? JSON.stringify(embed) : null, id);
+  return messagePayload(await get('SELECT * FROM messages WHERE id = ?', id));
+}
+
 const deleteMessage = (id) => run('DELETE FROM messages WHERE id = ?', id);
 
 async function purgeMessages(channelId, count) {
@@ -579,7 +585,7 @@ module.exports = {
   rank, ROLE_RANK, setRole, isBanned, banMember, unbanMember, listBans,
   channelPayload, createChannel, getChannel, listChannels, deleteChannel, renameChannel, findChannelByName,
   getOrCreateDM, dmParticipants, listDMs, canAccess,
-  messagePayload, createMessage, getMessage, listMessages, editMessage, deleteMessage, purgeMessages, toggleReaction,
+  messagePayload, createMessage, getMessage, listMessages, editMessage, setMessageEmbed, deleteMessage, purgeMessages, toggleReaction,
   sendFriendRequest, respondFriendRequest, removeFriend, blockUser, unblockUser, autoFriend,
   listFriends, areFriends, isBlocked, friendshipBetween,
   getSettings, updateSettings,

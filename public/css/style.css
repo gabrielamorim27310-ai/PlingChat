@@ -427,6 +427,10 @@ button { background: none; border: 0; cursor: pointer; }
 .embed-avatar { display: flex; justify-content: center; padding: 8px 0; }
 .embed-music { margin-top: 10px; }
 .embed-music audio { width: 100%; }
+.invite-embed-actions { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+.invite-embed-resolved { font-size: 13px; font-weight: 600; margin-top: 4px; }
+.invite-embed-resolved.accepted { color: var(--green); }
+.invite-embed-resolved.declined { color: var(--text-mute); }
 
 .typing { height: 22px; padding: 0 20px; font-size: 12px; color: var(--text-dim); }
 

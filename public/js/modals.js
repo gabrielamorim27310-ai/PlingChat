@@ -553,7 +553,7 @@ function appInvites() {
 }
 
 function userSettings() {
-  const colors = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#00b0f4', '#9b59b6', '#1abc9c', '#e67e22'];
+  const colors = ['#9b4dff', '#d94fc0', '#5eead4', '#37b6f0', '#f0c264', '#ff7a7a', '#3d7ce0', '#7ec8f5', '#ff7ab8'];
   const custom = el('input', { type: 'text', maxlength: 60, value: state.me.customStatus || '', placeholder: 'Jogando alguma coisa...' });
   const bio = el('textarea', { rows: 3, maxlength: 200, placeholder: 'Fale um pouco sobre você' });
   bio.value = state.me.bio || '';

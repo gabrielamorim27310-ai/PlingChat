@@ -1355,6 +1355,55 @@ function mountStaticIcons() {
   $('#stageFullscreen .pill-icon').replaceChildren(icon('maximize', 16));
 }
 
+/**
+ * Alça arrastável entre o palco de chamada e o chat: deixa a pessoa decidir
+ * o quanto de espaço a chamada ocupa, em vez de uma altura fixa que tanto
+ * pode sobrar (chat espremido) quanto faltar (vídeo pequeno).
+ */
+function bindStageResize() {
+  const stage = $('#stage');
+  const handle = $('#stageResize');
+  if (!stage || !handle) return;
+
+  const MIN = 220;
+  const saved = Number(localStorage.getItem('nexus.stageHeight'));
+  if (saved > 0) stage.style.setProperty('--stage-h', `${saved}px`);
+
+  let dragging = false, startY = 0, startH = 0;
+
+  handle.addEventListener('pointerdown', (e) => {
+    if (stage.classList.contains('is-fullscreen')) return;
+    dragging = true;
+    startY = e.clientY;
+    startH = stage.getBoundingClientRect().height;
+    handle.classList.add('dragging');
+    handle.setPointerCapture(e.pointerId);
+    document.body.style.userSelect = 'none';
+  });
+
+  handle.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const max = window.innerHeight * 0.88;
+    const h = Math.min(max, Math.max(MIN, startH + (e.clientY - startY)));
+    stage.style.setProperty('--stage-h', `${h}px`);
+  });
+
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    localStorage.setItem('nexus.stageHeight', String(Math.round(stage.getBoundingClientRect().height)));
+  };
+  handle.addEventListener('pointerup', stop);
+  handle.addEventListener('pointercancel', stop);
+
+  handle.addEventListener('dblclick', () => {
+    stage.style.removeProperty('--stage-h');
+    localStorage.removeItem('nexus.stageHeight');
+  });
+}
+
 function bindUI() {
   mountStaticIcons();
   $('#railHome').addEventListener('click', openHome);
@@ -1387,6 +1436,8 @@ function bindUI() {
     $('#stageFullscreen .pill-label').textContent = active ? 'Sair da tela cheia' : 'Tela cheia';
     $('#stageFullscreen .pill-icon').replaceChildren(icon(active ? 'minimize' : 'maximize', 16));
   });
+
+  bindStageResize();
 
   $('#sidebarHeader').addEventListener('click', () => {
     if (state.view === 'guild') openModal(modals.guildMenu(guild()));

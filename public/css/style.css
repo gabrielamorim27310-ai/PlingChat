@@ -320,8 +320,17 @@ button { background: none; border: 0; cursor: pointer; }
 .messages { flex: 1; overflow-y: auto; padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 2px; }
 
 /* ------------------------------------------------------------ palco ---- */
-.stage { background: #06070a; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; height: 68vh; min-height: 260px; max-height: 640px; }
-.stage-grid { flex: 1; display: grid; gap: 8px; padding: 10px; overflow: auto; grid-template-columns: repeat(auto-fit, minmax(220px, 360px)); grid-auto-rows: minmax(140px, 1fr); justify-content: center; align-content: center; }
+.stage {
+  background: #06070a; border-bottom: 1px solid var(--line); display: flex; flex-direction: column;
+  height: var(--stage-h, 68vh); min-height: 220px; max-height: 88vh;
+}
+/* auto-fit sem teto: com poucos participantes, cada ladrilho cresce (1fr)
+   pra ocupar o espaço disponível em vez de travar num tamanho pequeno fixo. */
+.stage-grid {
+  flex: 1; display: grid; gap: 10px; padding: 10px; overflow: auto;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  grid-auto-rows: minmax(160px, 1fr); justify-content: center; align-content: center;
+}
 .tile { position: relative; background: var(--bg-1); border-radius: 10px; overflow: hidden; min-height: 140px; aspect-ratio: 16/9; display: grid; place-items: center; border: 2px solid transparent; }
 .tile.speaking { border-color: var(--green); }
 .tile video { width: 100%; height: 100%; object-fit: contain; background: #000; }
@@ -331,6 +340,18 @@ button { background: none; border: 0; cursor: pointer; }
 #stage.is-fullscreen { height: 100vh; max-height: none; border-bottom: 0; }
 #stage.is-fullscreen .stage-grid { padding: 24px; }
 .stage-bar { display: flex; gap: 8px; justify-content: center; padding: 10px; background: var(--bg-1); flex-wrap: wrap; }
+
+/* alça pra redimensionar a chamada manualmente, arrastando pra cima/baixo */
+.stage-resize-handle {
+  height: 7px; flex: none; cursor: row-resize; background: var(--bg-1);
+  position: relative; touch-action: none; border-bottom: 1px solid var(--line);
+}
+.stage-resize-handle::after {
+  content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 36px; height: 3px; border-radius: 2px; background: var(--line); transition: background .15s;
+}
+.stage-resize-handle:hover::after, .stage-resize-handle.dragging::after { background: var(--brand); }
+#stage[hidden] + .stage-resize-handle, #stage.is-fullscreen + .stage-resize-handle { display: none; }
 .pill-btn { background: var(--bg-4); padding: 8px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
 .icon { flex: none; display: block; }
 .pill-btn:hover { background: #333b4d; }

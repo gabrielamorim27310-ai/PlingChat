@@ -611,12 +611,17 @@ button { background: none; border: 0; cursor: pointer; }
      sem isso .main herdaria grid-column:3 da regra desktop e cairia numa
      3ª coluna implícita em vez da 2ª (1fr) que existe de verdade. */
   .main { grid-column: 2; }
-  .sidebar { position: absolute; left: var(--rail-w); top: 0; bottom: 0; width: var(--side-w); z-index: 20; }
+  /* preenche o resto da largura de verdade (não um width fixo de desktop
+     sobrando espaço morto do lado) */
+  .sidebar { position: absolute; left: var(--rail-w); right: 0; top: 0; bottom: 0; width: auto; z-index: 20; }
   .app.chat-open .sidebar { display: none; }
   .app:not(.chat-open) .main { display: none; }
   .app.nav-collapsed { grid-template-columns: 0 1fr; }
   .app.nav-collapsed .rail { display: none; }
   .app.nav-collapsed:not(.chat-open) .sidebar { left: 0; }
-  .members { position: absolute; right: 0; top: 0; bottom: 0; z-index: 25; }
+  /* painel de membros cobre a tela toda (senão fica uma faixa estreita que
+     nem cabe direito) e ganha um botão de fechar próprio -- o toggle do
+     cabeçalho principal fica embaixo desse painel, inalcançável. */
+  .members { position: absolute; left: var(--rail-w); right: 0; top: 0; bottom: 0; width: auto; z-index: 25; }
   .only-mobile { display: grid; }
 }

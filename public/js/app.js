@@ -851,8 +851,16 @@ export async function openChannel(channelId) {
   $('#btnVideoCall').hidden = !isDM;
   $('#btnMembers').hidden = isDM;
   $('#btnBotPanel').hidden = isDM;
-  $('#membersPane').hidden = isDM;
-  $('#input').placeholder = isDM ? `Conversar com ${channel.recipient?.username}` : `Conversar em #${channel?.name}`;
+  // No celular o painel de membros não abre sozinho -- cobre a tela toda e
+  // trava o clique em tudo (composer incluso). Só abre pelo botão mesmo.
+  $('#membersPane').hidden = isDM || matchMedia('(max-width: 860px)').matches;
+  // No celular o campo de digitar fica bem estreito (espremido entre os
+  // botões de emoji e enviar) -- "Conversar com {nome}" quebra linha ali e a
+  // segunda linha some fora da área visível. Nome/canal já aparece bem
+  // grande no cabeçalho, então não precisa repetir no placeholder também.
+  $('#input').placeholder = matchMedia('(max-width: 480px)').matches
+    ? 'Mensagem'
+    : isDM ? `Conversar com ${channel.recipient?.username}` : `Conversar em #${channel?.name}`;
 
   state.unread[channelId] = 0;
   state.mentioned.delete(channelId);
@@ -1471,8 +1479,10 @@ function mountStaticIcons() {
     btnBack: ['chevron-left', 18],
     btnCall: ['phone', 16],
     btnVideoCall: ['video', 16],
+    btnBotPanel: ['cpu', 16],
     btnMembers: ['users', 16],
     btnNavToggle: ['sidebar', 17],
+    membersClose: ['close', 16],
     replyCancel: ['close', 14],
     membersInviteBtn: ['user-plus', 15]
   };
@@ -1577,6 +1587,7 @@ function bindUI() {
   $('#btnUserSettings').addEventListener('click', () => openModal(modals.userSettings()));
   $('#btnSettings').addEventListener('click', () => openModal(modals.userSettings()));
   $('#btnMembers').addEventListener('click', () => { $('#membersPane').hidden = !$('#membersPane').hidden; });
+  $('#membersClose').addEventListener('click', () => { $('#membersPane').hidden = true; });
   $('#membersSearch').addEventListener('input', debounce(renderMembers, 120));
   $('#membersInviteBtn').addEventListener('click', () => { const g = guild(); if (g) openModal(modals.invite(g)); });
 

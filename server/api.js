@@ -92,6 +92,7 @@ router.get('/invites', auth.requireAuth, wrap(async (req, res) => {
   res.json({
     codes: await invites.listCodes(req.user.id),
     max: invites.MAX_ACTIVE_PER_USER,
+    maxUses: invites.MAX_USES_PER_CODE,
     unlimited: req.user.id === invites.OWNER_USER_ID
   });
 }));

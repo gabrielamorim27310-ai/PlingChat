@@ -498,12 +498,12 @@ function appInvites() {
   const list = el('div', {});
   const note = el('input', { type: 'text', maxlength: 40, placeholder: 'Para quem é? (opcional)' });
   const subtitle = el('p', { style: 'color:var(--text-mute);font-size:13px;margin-top:4px' });
-  let limits = { max: 0, unlimited: false };
+  let limits = { max: 0, maxUses: 0, unlimited: false };
 
   const render = (codes) => {
     subtitle.textContent = limits.unlimited
       ? 'Convites sem limite de usos nem de quantos você pode ter ativos.'
-      : `Cada convite não tem limite de usos — o limite é de até ${limits.max} convites ativos ao mesmo tempo.`;
+      : `Cada convite vale para até ${limits.maxUses} pessoas — no máximo ${limits.max} convites ativos ao mesmo tempo.`;
 
     list.replaceChildren();
     if (!codes.length) {
@@ -516,7 +516,7 @@ function appInvites() {
         el('code', { class: item.active ? '' : 'used' }, item.code),
         el('span', { style: 'color:var(--text-mute);font-size:12px' },
           item.note ? `${item.note} · ` : '',
-          item.revoked ? 'revogado' : `usado ${item.uses}x`),
+          item.revoked ? 'revogado' : (limits.unlimited ? `usado ${item.uses}x` : `${item.uses}/${item.maxUses} usados`)),
         el('div', { class: 'acts' },
           item.active ? el('button', {
             class: 'icon-btn', title: 'Copiar link de cadastro',
@@ -560,7 +560,7 @@ function appInvites() {
   };
 
   api.get('/invites')
-    .then(({ codes, max, unlimited }) => { limits = { max, unlimited }; render(codes); })
+    .then(({ codes, max, maxUses, unlimited }) => { limits = { max, maxUses, unlimited }; render(codes); })
     .catch((err) => toast(err.message, 'err'));
 
   return shell({

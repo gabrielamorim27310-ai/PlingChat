@@ -96,12 +96,14 @@ async function loginWithGoogle(credential, inviteCode = null) {
       // Mesma regra do cadastro por e-mail: o convite ja vem com amizade.
       if (code?.created_by) await store.autoFriend(code.created_by, user.id);
     }
+
+    // Foto de perfil inicial, só na criação da conta — em logins seguintes
+    // isso sobrescreveria uma foto que a pessoa tenha trocado depois.
+    if (payload.picture) await run('UPDATE users SET avatar_url = ? WHERE id = ?', payload.picture, user.id);
   }
 
   // O Google ja confirmou o endereco: nao precisamos verificar de novo.
   if (payload.email_verified) await run('UPDATE users SET email_verified = 1 WHERE id = ?', user.id);
-
-  if (payload.picture) await run('UPDATE users SET avatar_url = ? WHERE id = ?', payload.picture, user.id);
 
   user = await store.getUser(user.id);
   return { user: store.publicUser(user), token: signToken(user.id) };

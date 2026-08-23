@@ -44,6 +44,7 @@ const commands = [
       if (!target) return;
       const reason = rest.join(' ') || 'sem motivo informado';
       store.removeMember(ctx.guild.id, target.id);
+      store.logAudit(ctx.guild.id, ctx.user.id, 'kick', target.id, { reason });
       ctx.bot.deliver?.({ __memberRemoved: true, guildId: ctx.guild.id, userId: target.id });
       ctx.bot.logAction(ctx.guild.id, `👢 **${target.username}** foi expulso por **${ctx.user.username}** — ${reason}`);
       return ctx.reply('', ctx.embed({
@@ -67,6 +68,7 @@ const commands = [
       if (!target) return;
       const reason = rest.join(' ') || 'sem motivo informado';
       store.banMember(ctx.guild.id, target.id, reason, ctx.user.id);
+      store.logAudit(ctx.guild.id, ctx.user.id, 'ban', target.id, { reason });
       ctx.bot.deliver?.({ __memberRemoved: true, guildId: ctx.guild.id, userId: target.id });
       ctx.bot.logAction(ctx.guild.id, `🔨 **${target.username}** foi banido por **${ctx.user.username}** — ${reason}`);
       return ctx.reply('', ctx.embed({
@@ -90,6 +92,7 @@ const commands = [
       const found = banned.find((b) => b.user && (b.user.handle.toLowerCase() === query || b.user.username.toLowerCase() === query));
       if (!found) return ctx.reply('', ctx.embed({ color: ctx.COLORS.err, description: 'Esse usuario nao esta banido.' }));
       store.unbanMember(ctx.guild.id, found.user.id);
+      store.logAudit(ctx.guild.id, ctx.user.id, 'unban', found.user.id);
       ctx.bot.logAction(ctx.guild.id, `♻️ **${found.user.username}** foi desbanido por **${ctx.user.username}**`);
       return ctx.reply('', ctx.embed({ color: ctx.COLORS.ok, description: `♻️ **${found.user.username}** foi desbanido.` }));
     }
@@ -125,6 +128,7 @@ const commands = [
       const reason = rest.join(' ') || 'sem motivo informado';
       run('UPDATE guild_members SET muted_until = ? WHERE guild_id = ? AND user_id = ?',
         Date.now() + ms, ctx.guild.id, target.id);
+      store.logAudit(ctx.guild.id, ctx.user.id, 'mute', target.id, { reason, durationMs: ms });
       ctx.bot.deliver?.({ __memberUpdated: true, guildId: ctx.guild.id, userId: target.id });
       ctx.bot.logAction(ctx.guild.id, `🔇 **${target.username}** silenciado por ${humanDuration(ms)} — ${reason}`);
       return ctx.reply('', ctx.embed({
@@ -146,6 +150,7 @@ const commands = [
       const target = store.findMemberByName(ctx.guild.id, ctx.argStr);
       if (!target) return ctx.reply('', ctx.embed({ color: ctx.COLORS.err, description: 'Usuario nao encontrado.' }));
       run('UPDATE guild_members SET muted_until = 0 WHERE guild_id = ? AND user_id = ?', ctx.guild.id, target.id);
+      store.logAudit(ctx.guild.id, ctx.user.id, 'unmute', target.id);
       ctx.bot.deliver?.({ __memberUpdated: true, guildId: ctx.guild.id, userId: target.id });
       return ctx.reply('', ctx.embed({ color: ctx.COLORS.ok, description: `🔊 **${target.username}** pode falar novamente.` }));
     }
@@ -172,6 +177,7 @@ const commands = [
           Date.now() + 30 * 60_000, ctx.guild.id, target.id);
         extra = 'Atingiu 3 advertencias: silenciado automaticamente por 30 minutos.';
       }
+      store.logAudit(ctx.guild.id, ctx.user.id, 'warn', target.id, { reason, total });
       ctx.bot.logAction(ctx.guild.id, `⚠️ **${target.username}** advertido por **${ctx.user.username}** (${total}/3) — ${reason}`);
       return ctx.reply('', ctx.embed({
         color: ctx.COLORS.warn,
@@ -218,6 +224,7 @@ const commands = [
       const target = store.findMemberByName(ctx.guild.id, ctx.argStr);
       if (!target) return ctx.reply('Usuario nao encontrado.');
       run('DELETE FROM warns WHERE guild_id = ? AND user_id = ?', ctx.guild.id, target.id);
+      store.logAudit(ctx.guild.id, ctx.user.id, 'warns_cleared', target.id);
       return ctx.reply('', ctx.embed({ color: ctx.COLORS.ok, description: `🧹 Advertencias de **${target.username}** zeradas.` }));
     }
   },
@@ -232,6 +239,7 @@ const commands = [
       const count = Math.min(Math.max(parseInt(ctx.args[0], 10) || 10, 1), 100);
       const ids = store.purgeMessages(ctx.channel.id, count + 1);
       for (const id of ids) ctx.bot.deliver?.({ __deleted: true, id, channelId: ctx.channel.id });
+      store.logAudit(ctx.guild.id, ctx.user.id, 'messages_purged', null, { count: ids.length, channel: ctx.channel.name });
       ctx.bot.logAction(ctx.guild.id, `🧹 **${ctx.user.username}** limpou ${ids.length} mensagens em #${ctx.channel.name}`);
       return ctx.reply('', ctx.embed({
         color: ctx.COLORS.ok,
@@ -256,6 +264,7 @@ const commands = [
         return ctx.reply('', ctx.embed({ color: ctx.COLORS.err, description: 'Voce nao pode dar um cargo igual ou acima do seu.' }));
       }
       store.setRole(ctx.guild.id, target.id, role);
+      store.logAudit(ctx.guild.id, ctx.user.id, 'role_promoted', target.id, { role });
       ctx.bot.deliver?.({ __memberUpdated: true, guildId: ctx.guild.id, userId: target.id });
       return ctx.reply('', ctx.embed({
         color: ctx.COLORS.ok,
@@ -274,6 +283,7 @@ const commands = [
       const target = resolveTarget(ctx, ctx.argStr);
       if (!target) return;
       store.setRole(ctx.guild.id, target.id, 'member');
+      store.logAudit(ctx.guild.id, ctx.user.id, 'role_demoted', target.id);
       ctx.bot.deliver?.({ __memberUpdated: true, guildId: ctx.guild.id, userId: target.id });
       return ctx.reply('', ctx.embed({ color: ctx.COLORS.warn, description: `⬇️ **${target.username}** voltou a ser membro.` }));
     }

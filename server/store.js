@@ -465,7 +465,8 @@ function getSettings(guildId) {
 const SETTING_COLUMNS = new Set([
   'prefix', 'welcome_channel_id', 'welcome_message', 'goodbye_message', 'log_channel_id',
   'levels_enabled', 'levelup_message', 'economy_enabled',
-  'automod_links', 'automod_spam', 'automod_caps', 'automod_words'
+  'automod_links', 'automod_spam', 'automod_caps', 'automod_words',
+  'org_domain'
 ]);
 
 function updateSettings(guildId, patch) {
@@ -508,6 +509,38 @@ function unreadCounts(userId) {
   return out;
 }
 
+/**
+ * Log de auditoria por servidor. Toda acao administrativa relevante passa
+ * por aqui — banir, mutar, mudar cargo, trocar configuracao sensivel — pra
+ * quem administra uma organizacao conseguir ver quem fez o que, quando.
+ */
+const logAudit = (guildId, actorId, action, targetId = null, meta = null) =>
+  run(
+    'INSERT INTO audit_log (id, guild_id, actor_id, action, target_id, meta, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    newId(), guildId, actorId || null, action, targetId || null, meta ? JSON.stringify(meta) : null, now()
+  );
+
+function listAuditLog(guildId, { before = null, limit = 50 } = {}) {
+  const rows = before
+    ? all('SELECT * FROM audit_log WHERE guild_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT ?', guildId, before, Math.min(limit, 100))
+    : all('SELECT * FROM audit_log WHERE guild_id = ? ORDER BY created_at DESC LIMIT ?', guildId, Math.min(limit, 100));
+  return rows.map((r) => ({
+    id: r.id,
+    actor: r.actor_id ? publicUser(getUser(r.actor_id)) : null,
+    action: r.action,
+    target: r.target_id ? publicUser(getUser(r.target_id)) : null,
+    meta: r.meta ? JSON.parse(r.meta) : null,
+    createdAt: r.created_at
+  }));
+}
+
+/** Emails com esse dominio entram no servidor sozinhos, sem convite. */
+const domainMatches = (guildId, email) => {
+  const domain = getSettings(guildId).org_domain;
+  if (!domain) return false;
+  return String(email || '').toLowerCase().endsWith('@' + domain.toLowerCase());
+};
+
 /** Notificacoes push (Web Push). Uma linha por dispositivo/navegador inscrito. */
 const saveSubscription = (userId, sub) =>
   run(
@@ -534,5 +567,6 @@ module.exports = {
   listFriends, areFriends, isBlocked, friendshipBetween,
   getSettings, updateSettings,
   markRead, unreadCounts,
-  saveSubscription, removeSubscription, listSubscriptions
+  saveSubscription, removeSubscription, listSubscriptions,
+  logAudit, listAuditLog, domainMatches
 };

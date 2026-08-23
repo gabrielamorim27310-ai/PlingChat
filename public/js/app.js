@@ -32,6 +32,7 @@ export const state = {
   botCommands: [],
   botUser: null,
 
+  workspace: 'personal',  // 'personal' | id de um servidor-organização
   view: 'home',           // 'home' | 'guild'
   activeGuildId: null,
   activeChannelId: null,
@@ -388,6 +389,24 @@ async function handleLaunchParams() {
     if (channel) openChannel(canal);
   }
 
+  const orgGuildId = params.get('org');
+  if (orgGuildId) {
+    dropParam('org');
+    if (state.guilds.some((g) => g.id === orgGuildId)) {
+      openGuild(orgGuildId);
+    } else {
+      try {
+        const { guild } = await api.post(`/guilds/${orgGuildId}/join-by-domain`, {});
+        state.guilds.push(guild);
+        renderRail();
+        openGuild(guild.id);
+        toast(`Você entrou em "${guild.name}" pelo domínio verificado!`, 'ok');
+      } catch (err) {
+        toast(err.message, 'err');
+      }
+    }
+  }
+
   const code = params.get('convite');
   if (!code) return;
   dropParam('convite');
@@ -565,11 +584,52 @@ function renderMe() {
 
 /* ============================================================== rail ==== */
 
+/** Organizações são servidores com domínio de e-mail verificado configurado. */
+const isOrg = (g) => !!g.settings?.org_domain;
+const visibleGuilds = () => state.workspace === 'personal'
+  ? state.guilds.filter((g) => !isOrg(g))
+  : state.guilds.filter((g) => g.id === state.workspace);
+
+function renderWorkspaceSwitcher() {
+  const orgs = state.guilds.filter(isOrg);
+  const switcher = $('#wsSwitcher');
+  switcher.hidden = !orgs.length;
+  if (!orgs.length) return;
+
+  // se o servidor-organização ativo sumiu (saiu, foi excluído), volta pro pessoal
+  if (state.workspace !== 'personal' && !orgs.some((g) => g.id === state.workspace)) state.workspace = 'personal';
+
+  const current = state.workspace === 'personal' ? null : guild(state.workspace);
+  $('#wsAvatar').replaceChildren(current ? initials(current.name) : icon('users', 18));
+  $('#wsAvatar').title = current ? current.name : 'Pessoal';
+
+  const menu = $('#wsMenu');
+  menu.replaceChildren();
+  const row = (label, active, onclick, sub) => el('button', {
+    class: `ws-row ${active ? 'active' : ''}`, onclick
+  }, el('span', { class: 'ws-row-avatar' }, sub ? initials(label) : icon('users', 16)),
+    el('div', {}, el('strong', {}, label), sub ? el('small', {}, sub) : null));
+
+  menu.append(row('Pessoal', state.workspace === 'personal', () => switchWorkspace('personal')));
+  for (const g of orgs) menu.append(row(g.name, state.workspace === g.id, () => switchWorkspace(g.id), 'Organização'));
+}
+
+function switchWorkspace(target) {
+  state.workspace = target;
+  $('#wsMenu').hidden = true;
+  renderWorkspaceSwitcher();
+  renderRail();
+  const guilds = visibleGuilds();
+  if (target !== 'personal' && guilds.length) openGuild(guilds[0].id);
+  else openHome();
+}
+
 function renderRail() {
   const container = $('#railGuilds');
   container.replaceChildren();
+  renderWorkspaceSwitcher();
 
-  for (const g of state.guilds) {
+  for (const g of visibleGuilds()) {
     const unread = g.channels.reduce((sum, c) => sum + (state.unread[c.id] || 0), 0);
     const mentioned = g.channels.some((c) => state.mentioned.has(c.id));
     const button = el('button', {
@@ -1297,6 +1357,19 @@ function mountStaticIcons() {
 function bindUI() {
   mountStaticIcons();
   $('#railHome').addEventListener('click', openHome);
+  $('#wsTrigger').addEventListener('click', (event) => {
+    event.stopPropagation();
+    const menu = $('#wsMenu');
+    menu.hidden = !menu.hidden;
+    if (!menu.hidden) {
+      const r = $('#wsTrigger').getBoundingClientRect();
+      menu.style.top = `${r.top}px`;
+      menu.style.left = `${r.right + 8}px`;
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (!$('#wsMenu').hidden && !$('#wsSwitcher').contains(event.target)) $('#wsMenu').hidden = true;
+  });
   $('#btnAddGuild').addEventListener('click', () => openModal(modals.addGuild()));
   $('#btnBack').addEventListener('click', () => document.getElementById('app').classList.remove('chat-open'));
 

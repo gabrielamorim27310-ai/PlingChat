@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { $, el, icon, avatarNode } from './util.js';
+import { $, el, icon, avatarNode, escapeHtml } from './util.js';
 import { state, socket, toast, openGuild, openHome, startDM, refresh, appConfig, setupPush, applyTheme, getTheme } from './app.js';
 
 /* ============================================================ básico ==== */
@@ -160,6 +160,7 @@ function guildMenu(guild) {
       item('user-plus', 'Convidar pessoas', () => openModal(invite(guild))),
       isAdmin ? item('sliders', 'Configurações do servidor', () => openModal(guildSettings(guild))) : null,
       isAdmin ? item('cpu', 'Painel do bot Nexy', () => openModal(botPanel(guild))) : null,
+      isAdmin ? item('list', 'Log de auditoria', () => openModal(auditLog(guild))) : null,
       isAdmin ? item('plus', 'Criar canal', () => openModal(createChannel(guild.id))) : null,
       !isOwner ? item('log-out', 'Sair do servidor', async () => {
         if (!confirm(`Sair de "${guild.name}"?`)) return;
@@ -275,6 +276,7 @@ function guildSettings(guild) {
   const logChannel = channelSelect(settings.log_channel_id);
   const levelupMessage = el('input', { type: 'text', value: settings.levelup_message || '' });
   const badWords = el('input', { type: 'text', value: settings.automod_words || '', placeholder: 'palavra1, palavra2' });
+  const orgDomain = el('input', { type: 'text', value: settings.org_domain || '', placeholder: 'suaempresa.com.br' });
 
   const flags = {
     levels_enabled: settings.levels_enabled,
@@ -294,6 +296,7 @@ function guildSettings(guild) {
         log_channel_id: logChannel.value || null,
         levelup_message: levelupMessage.value,
         automod_words: badWords.value,
+        org_domain: orgDomain.value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '') || null,
         ...Object.fromEntries(Object.entries(flags).map(([k, v]) => [k, v ? 1 : 0]))
       });
       guild.settings = updated;
@@ -308,7 +311,14 @@ function guildSettings(guild) {
     title: `Configurações · ${guild.name}`,
     subtitle: 'Tudo que o Nexy faz neste servidor é ajustado aqui.',
     body: el('div', {},
-      el('h4', { style: 'margin:4px 0 10px;color:var(--brand-2);font-size:12px;text-transform:uppercase' }, 'Bot'),
+      el('h4', { style: 'margin:4px 0 10px;color:var(--brand-2);font-size:12px;text-transform:uppercase' }, 'Empresa'),
+      field('Domínio de e-mail verificado', orgDomain),
+      el('p', { style: 'font-size:12px;color:var(--text-mute);margin-top:-8px' },
+        settings.org_domain
+          ? `Qualquer conta com e-mail @${settings.org_domain} pode entrar sem convite, pelo link: ${location.origin}/?org=${guild.id}`
+          : 'Deixe em branco pra manter fechado só por convite. Preenchido, qualquer pessoa com e-mail desse domínio entra sozinha.'),
+
+      el('h4', { style: 'margin:22px 0 10px;color:var(--brand-2);font-size:12px;text-transform:uppercase' }, 'Bot'),
       field('Prefixo dos comandos', prefix),
       switchRow('Sistema de níveis', 'Ganha XP conversando e sobe de nível', flags.levels_enabled, (v) => { flags.levels_enabled = v; }),
       field('Mensagem de level up', levelupMessage),
@@ -328,6 +338,72 @@ function guildSettings(guild) {
       switchRow('Bloquear CAPS', 'Apaga mensagens gritadas', flags.automod_caps, (v) => { flags.automod_caps = v; }),
       field('Palavras bloqueadas (separadas por vírgula)', badWords)),
     foot: [cancelBtn(), el('button', { class: 'btn btn-primary', onclick: save }, 'Salvar')]
+  });
+}
+
+/* ====================================================== log de auditoria = */
+
+const strong = (s) => `<strong>${escapeHtml(s ?? '???')}</strong>`;
+const AUDIT_LABEL = {
+  kick: (e) => `expulsou ${strong(e.target?.username)}${e.meta?.reason ? ` — ${escapeHtml(e.meta.reason)}` : ''}`,
+  ban: (e) => `baniu ${strong(e.target?.username)}${e.meta?.reason ? ` — ${escapeHtml(e.meta.reason)}` : ''}`,
+  unban: (e) => `desbaniu ${strong(e.target?.username)}`,
+  mute: (e) => `silenciou ${strong(e.target?.username)}${e.meta?.reason ? ` — ${escapeHtml(e.meta.reason)}` : ''}`,
+  unmute: (e) => `liberou ${strong(e.target?.username)}`,
+  warn: (e) => `advertiu ${strong(e.target?.username)} (${escapeHtml(String(e.meta?.total ?? '?'))}/3)`,
+  warns_cleared: (e) => `limpou as advertências de ${strong(e.target?.username)}`,
+  messages_purged: (e) => `apagou ${escapeHtml(String(e.meta?.count ?? '?'))} mensagens em #${escapeHtml(e.meta?.channel ?? '?')}`,
+  role_promoted: (e) => `promoveu ${strong(e.target?.username)} a ${escapeHtml(e.meta?.role ?? 'cargo')}`,
+  role_demoted: (e) => `rebaixou ${strong(e.target?.username)}`,
+  settings_update: (e) => `alterou configurações (${escapeHtml((e.meta?.keys || []).join(', ') || '—')})`,
+  channel_deleted: (e) => `excluiu o canal #${escapeHtml(e.meta?.name ?? '?')}`,
+  member_joined_invite: () => `entrou por convite`,
+  member_invited: (e) => `adicionou ${strong(e.target?.username)} direto`,
+  member_joined_domain: () => `entrou pelo domínio verificado`
+};
+
+function auditLog(guild) {
+  const list = el('div', { style: 'display:flex;flex-direction:column;gap:2px;max-height:420px;overflow-y:auto' });
+  const loadMore = el('button', { class: 'btn btn-ghost btn-block', style: 'margin-top:10px' }, 'Carregar mais');
+  let before = null;
+  let loading = false;
+
+  const row = (e) => {
+    const describe = AUDIT_LABEL[e.action] || (() => e.action);
+    return el('div', { style: 'display:flex;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line);align-items:flex-start' },
+      avatarNode(e.actor, { size: 26, status: false }),
+      el('div', { style: 'min-width:0;flex:1' },
+        el('div', { style: 'font-size:13.5px', html: `${strong(e.actor?.username || 'alguém')} ${describe(e)}` }),
+        el('div', { style: 'font-size:11px;color:var(--text-mute);margin-top:2px' },
+          new Date(e.createdAt).toLocaleString('pt-BR'))));
+  };
+
+  const load = async () => {
+    if (loading) return;
+    loading = true;
+    try {
+      const qs = before ? `?before=${before}` : '';
+      const { entries } = await api.get(`/guilds/${guild.id}/audit-log${qs}`);
+      for (const e of entries) list.append(row(e));
+      if (entries.length) before = entries[entries.length - 1].createdAt;
+      loadMore.hidden = entries.length < 50;
+      if (!entries.length && !before) {
+        list.append(el('p', { style: 'padding:16px 4px;color:var(--text-mute);font-size:13px' }, 'Nada registrado ainda.'));
+      }
+    } catch (err) {
+      toast(err.message, 'err');
+    } finally {
+      loading = false;
+    }
+  };
+  loadMore.addEventListener('click', load);
+  load();
+
+  return shell({
+    title: `Log de auditoria · ${guild.name}`,
+    subtitle: 'Quem fez o quê, e quando — banimentos, mudança de cargo, configuração.',
+    body: el('div', {}, list, loadMore),
+    foot: [el('button', { class: 'btn btn-ghost', onclick: closeModal }, 'Fechar')]
   });
 }
 
@@ -691,5 +767,5 @@ function sendBotCommand(command) {
 
 export const modals = {
   addGuild, createGuild, joinGuild, createChannel, guildMenu, invite,
-  guildSettings, botPanel, userSettings, addFriend, userCard, appInvites
+  guildSettings, botPanel, userSettings, addFriend, userCard, appInvites, auditLog
 };

@@ -216,6 +216,17 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id         TEXT PRIMARY KEY,
+  guild_id   TEXT NOT NULL REFERENCES guilds(id) ON DELETE CASCADE,
+  actor_id   TEXT,
+  action     TEXT NOT NULL,
+  target_id  TEXT,
+  meta       TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_guild ON audit_log(guild_id, created_at);
 `);
 
 /**
@@ -229,6 +240,7 @@ function ensureColumn(table, column, definition) {
 
 ensureColumn('users', 'google_sub', 'TEXT');
 ensureColumn('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('guild_settings', 'org_domain', 'TEXT');
 
 /** Gera um id curto ordenavel por tempo, no estilo snowflake. */
 let seq = 0;

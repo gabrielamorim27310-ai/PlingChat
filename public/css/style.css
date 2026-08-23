@@ -145,6 +145,32 @@ button { background: none; border: 0; cursor: pointer; }
 /* ------------------------------------------------------------- rail ---- */
 .rail { background: var(--bg-0); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px 0; overflow-y: auto; }
 .rail::-webkit-scrollbar { width: 0; }
+
+/* seletor pessoal/organização, estilo Canva */
+.ws-switcher { flex: none; padding-bottom: 4px; margin-bottom: 2px; border-bottom: 1px solid var(--line); width: 48px; display: flex; justify-content: center; }
+.ws-trigger {
+  width: 40px; height: 40px; border-radius: 12px; background: var(--bg-3); color: var(--text);
+  display: grid; place-items: center; font-weight: 700; font-size: 14px; transition: border-radius .15s;
+}
+.ws-trigger:hover { border-radius: 10px; }
+.ws-avatar { display: grid; place-items: center; }
+.ws-menu {
+  position: fixed; z-index: 70; width: 240px; background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 12px; padding: 6px; box-shadow: 0 16px 40px rgba(0,0,0,.4);
+}
+.ws-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border-radius: 8px;
+  text-align: left; color: var(--text-dim); transition: background .12s, color .12s;
+}
+.ws-row:hover { background: var(--bg-3); color: var(--text); }
+.ws-row.active { background: var(--bg-4); color: var(--text); }
+.ws-row.active .ws-row-avatar { background: var(--brand); color: #fff; }
+.ws-row-avatar {
+  width: 30px; height: 30px; border-radius: 9px; background: var(--bg-4); color: var(--text);
+  display: grid; place-items: center; font-size: 12px; font-weight: 700; flex: none;
+}
+.ws-row strong { display: block; font-size: 13.5px; font-weight: 600; }
+.ws-row small { display: block; font-size: 11px; color: var(--text-mute); }
 .rail-guilds { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .rail-item {
   position: relative; width: 48px; height: 48px; border-radius: 14px;

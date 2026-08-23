@@ -189,8 +189,13 @@ router.post('/guilds/join', auth.requireAuth, wrap(async (req, res) => {
   if (!guild) throw new Error('Convite invalido ou expirado');
   if (store.isBanned(guild.id, req.user.id)) throw new Error('Voce esta banido deste servidor');
   if (store.getMember(guild.id, req.user.id)) throw new Error('Voce ja esta neste servidor');
+  const orgDomain = store.getSettings(guild.id).org_domain;
+  if (orgDomain && !store.domainMatches(guild.id, req.user.email)) {
+    throw new Error(`Esse servidor é restrito a e-mails @${orgDomain}`);
+  }
 
   store.addMember(guild.id, req.user.id);
+  store.logAudit(guild.id, req.user.id, 'member_joined_invite');
   req.app.locals.onMemberJoin?.(guild.id, req.user.id);
 
   res.json({
@@ -213,10 +218,40 @@ router.post('/guilds/:id/invite-friend', auth.requireAuth, wrap(async (req, res)
   if (!store.areFriends(req.user.id, friendId)) throw new Error('Só dá pra convidar quem já é seu amigo');
   if (store.isBanned(guild.id, friendId)) throw new Error('Essa pessoa está banida deste servidor');
   if (store.getMember(guild.id, friendId)) throw new Error('Essa pessoa já está no servidor');
+  const orgDomain = store.getSettings(guild.id).org_domain;
+  if (orgDomain && !store.domainMatches(guild.id, store.getUser(friendId)?.email)) {
+    throw new Error(`Esse servidor é restrito a e-mails @${orgDomain}`);
+  }
 
   store.addMember(guild.id, friendId);
+  store.logAudit(guild.id, req.user.id, 'member_invited', friendId);
   req.app.locals.onMemberJoin?.(guild.id, friendId);
   res.json({ ok: true, members: store.listMembers(guild.id) });
+}));
+
+/** Auto-cadastro por e-mail corporativo verificado: sem convite, sem código. */
+router.post('/guilds/:id/join-by-domain', auth.requireAuth, wrap(async (req, res) => {
+  const guild = store.getGuild(req.params.id);
+  if (!guild) throw new Error('Servidor nao encontrado');
+  if (store.isBanned(guild.id, req.user.id)) throw new Error('Voce esta banido deste servidor');
+  if (store.getMember(guild.id, req.user.id)) throw new Error('Voce ja esta neste servidor');
+  if (!store.domainMatches(guild.id, req.user.email)) {
+    throw new Error('Seu e-mail não pertence ao domínio dessa organização');
+  }
+
+  store.addMember(guild.id, req.user.id);
+  store.logAudit(guild.id, req.user.id, 'member_joined_domain');
+  req.app.locals.onMemberJoin?.(guild.id, req.user.id);
+
+  res.json({
+    guild: {
+      ...store.guildPayload(guild),
+      channels: store.listChannels(guild.id),
+      members: store.listMembers(guild.id),
+      settings: store.getSettings(guild.id),
+      myRole: 'member'
+    }
+  });
 }));
 
 router.delete('/guilds/:id/leave', auth.requireAuth, wrap(async (req, res) => {
@@ -245,8 +280,19 @@ router.get('/guilds/:id/members', auth.requireAuth, wrap(async (req, res) => {
 router.patch('/guilds/:id/settings', auth.requireAuth, wrap(async (req, res) => {
   if (store.rank(req.params.id, req.user.id) < store.ROLE_RANK.admin) throw new Error('Sem permissao');
   const settings = store.updateSettings(req.params.id, req.body || {});
+  store.logAudit(req.params.id, req.user.id, 'settings_update', null, { keys: Object.keys(req.body || {}) });
   req.app.locals.broadcastSettings?.(req.params.id, settings);
   res.json({ settings });
+}));
+
+/** Log de auditoria: quem fez o que, quando. So admin/dono ve. */
+router.get('/guilds/:id/audit-log', auth.requireAuth, wrap(async (req, res) => {
+  if (store.rank(req.params.id, req.user.id) < store.ROLE_RANK.admin) throw new Error('Sem permissao');
+  const entries = store.listAuditLog(req.params.id, {
+    before: req.query.before ? Number(req.query.before) : null,
+    limit: Math.min(parseInt(req.query.limit, 10) || 50, 100)
+  });
+  res.json({ entries });
 }));
 
 /* --------------------------------------------------------------- channels */
@@ -271,6 +317,7 @@ router.delete('/channels/:id', auth.requireAuth, wrap(async (req, res) => {
   if (!channel || !channel.guild_id) throw new Error('Canal nao encontrado');
   if (store.rank(channel.guild_id, req.user.id) < store.ROLE_RANK.admin) throw new Error('Sem permissao');
   store.deleteChannel(channel.id);
+  store.logAudit(channel.guild_id, req.user.id, 'channel_deleted', null, { name: channel.name });
   req.app.locals.broadcastChannels?.(channel.guild_id);
   res.json({ ok: true });
 }));

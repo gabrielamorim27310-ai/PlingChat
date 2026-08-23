@@ -948,12 +948,35 @@ function renderMessages() {
 
   const channel = channelById(state.activeChannelId);
   if (!list.length) {
+    const isDM = channel?.type === 'dm';
+    const g = !isDM ? guild() : null;
+
+    const askBot = () => {
+      const input = $('#input');
+      input.value = '!ajuda';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.focus();
+    };
+
+    const actions = isDM
+      ? [
+          el('button', { class: 'btn btn-ghost', onclick: () => startCall(channel.recipient.id, false) }, icon('phone', 15), ' Ligar'),
+          el('button', { class: 'btn btn-ghost', onclick: () => startCall(channel.recipient.id, true) }, icon('video', 15), ' Vídeo')
+        ]
+      : [
+          g ? el('button', { class: 'btn btn-ghost', onclick: () => openModal(modals.invite(g)) }, icon('user-plus', 15), ' Convidar pessoas') : null,
+          el('button', { class: 'btn btn-ghost', onclick: askBot }, icon('cpu', 15), ' Ver comandos do bot')
+        ];
+
     container.append(el('div', { class: 'empty' },
-      el('div', { class: 'big-icon' }, channel?.type === 'dm' ? '👋' : '💬'),
-      el('h3', {}, channel?.type === 'dm'
+      el('div', { class: 'empty-badge' }, icon('message-circle', 32)),
+      el('h3', {}, isDM
         ? `Início da conversa com ${channel.recipient?.username}`
         : `Bem-vindo a #${channel?.name ?? ''}`),
-      el('p', {}, 'Mande a primeira mensagem. Dica: digite !ajuda para falar com o Nexy.')));
+      el('p', {}, isDM
+        ? 'Mande a primeira mensagem ou comece uma chamada.'
+        : 'Mande a primeira mensagem. Dica: digite !ajuda para falar com o Nexy.'),
+      el('div', { class: 'empty-actions' }, actions)));
     return;
   }
 

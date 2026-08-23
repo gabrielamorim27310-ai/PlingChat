@@ -465,6 +465,13 @@ button { background: none; border: 0; cursor: pointer; }
 /* ------------------------------------------------------------ listas --- */
 .empty { display: grid; place-items: center; height: 100%; text-align: center; color: var(--text-mute); gap: 10px; padding: 40px; }
 .empty .big-icon { font-size: 48px; opacity: .5; }
+.empty h3 { color: var(--text); font-size: 18px; }
+.empty-badge {
+  width: 68px; height: 68px; border-radius: 28%; display: grid; place-items: center;
+  background: var(--brand-gradient); color: #fff; box-shadow: 0 14px 34px -12px rgba(155,77,255,.55);
+  margin-bottom: 4px;
+}
+.empty-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
 
 .friend-tabs { display: flex; gap: 6px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .friend-tab { padding: 5px 12px; border-radius: 6px; font-size: 14px; font-weight: 600; color: var(--text-dim); }

@@ -137,6 +137,9 @@ button { background: none; border: 0; cursor: pointer; }
 .verify-banner { background: rgba(250,166,26,.12); border-bottom: 1px solid rgba(250,166,26,.35); color: #ffd591; padding: 9px 16px; display: flex; align-items: center; gap: 12px; font-size: 13px; flex: none; }
 .verify-banner .link { color: #ffd591; text-decoration: underline; }
 .verify-banner .icon-btn { margin-left: auto; width: 26px; height: 26px; color: #ffd591; }
+.notif-banner { background: rgba(94,234,212,.12); border-bottom: 1px solid rgba(94,234,212,.35); color: #a9f2e6; padding: 9px 16px; display: flex; align-items: center; gap: 12px; font-size: 13px; flex: none; flex-wrap: wrap; }
+.notif-banner .link { color: #a9f2e6; text-decoration: underline; }
+.notif-banner .icon-btn { margin-left: auto; width: 26px; height: 26px; color: #a9f2e6; }
 
 .invite-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .invite-row code { background: var(--bg-0); padding: 4px 9px; border-radius: 6px; font-family: var(--font-mono); letter-spacing: .04em; }

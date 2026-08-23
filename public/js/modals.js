@@ -2,7 +2,8 @@ import { api } from './api.js';
 import { $, el, icon, avatarNode, escapeHtml, initials } from './util.js';
 import { state, socket, toast, openGuild, openHome, startDM, refresh, appConfig, setupPush, applyTheme, getTheme } from './app.js';
 import {
-  soundsEnabled, setSoundsEnabled, osNotificationsEnabled, enableOsNotifications, disableOsNotifications
+  soundsEnabled, setSoundsEnabled, osNotificationsEnabled, enableOsNotifications, disableOsNotifications,
+  isIOS, isMac, isStandaloneApp
 } from './notify.js';
 
 /* ============================================================ básico ==== */
@@ -764,29 +765,31 @@ function notifSettings() {
   // de início (iOS 16.4+) -- dentro do Safari normal é bloqueio da Apple,
   // não tem permissão que resolva. Detecta isso e explica em vez de deixar
   // o botão falhar sem dizer por quê.
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-
   let osControl;
-  if (isIOS && !isStandalone) {
+  if (isIOS() && !isStandaloneApp()) {
     osControl = el('p', { style: 'font-size:12px;color:var(--text-mute);line-height:1.5;margin-top:4px' },
       '📱 No iPhone, notificação do sistema só funciona com o PlingChat instalado: toque em ',
       el('strong', {}, 'Compartilhar'), ' → ', el('strong', {}, 'Adicionar à Tela de Início'),
       ', depois abra por esse ícone (não pelo Safari) pra ativar.');
   } else {
     const osLabel = el('span', {}, osNotificationsEnabled() ? 'Notificações do sistema ativadas' : 'Ativar notificações do sistema');
-    osControl = el('button', {
-      class: 'btn btn-ghost btn-block',
-      onclick: async () => {
-        if (osNotificationsEnabled()) {
-          disableOsNotifications();
-        } else {
-          const ok = await enableOsNotifications();
-          if (!ok) toast('Permissão de notificação recusada pelo navegador.', 'err');
+    const macHint = isMac() ? el('p', { style: 'font-size:12px;color:var(--text-mute);line-height:1.5;margin-top:6px' },
+      '🍎 No Mac, além de aceitar aqui, confira se o navegador está liberado em ',
+      el('strong', {}, 'Ajustes do Sistema → Notificações'), '.') : null;
+    osControl = el('div', {},
+      el('button', {
+        class: 'btn btn-ghost btn-block',
+        onclick: async () => {
+          if (osNotificationsEnabled()) {
+            disableOsNotifications();
+          } else {
+            const ok = await enableOsNotifications();
+            if (!ok) toast('Permissão de notificação recusada pelo navegador.', 'err');
+          }
+          osLabel.textContent = osNotificationsEnabled() ? 'Notificações do sistema ativadas' : 'Ativar notificações do sistema';
         }
-        osLabel.textContent = osNotificationsEnabled() ? 'Notificações do sistema ativadas' : 'Ativar notificações do sistema';
-      }
-    }, icon('bell', 15), ' ', osLabel);
+      }, icon('bell', 15), ' ', osLabel),
+      macHint);
   }
 
   return el('div', {}, soundToggle, osControl);

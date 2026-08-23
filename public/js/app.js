@@ -3,7 +3,10 @@ import { API_BASE } from './config.js';
 import { $, el, icon, avatarNode, renderMarkdown, formatTime, formatDay, dayKey, initials, debounce } from './util.js';
 import { VoiceClient } from './voice.js';
 import { openModal, closeModal, modals } from './modals.js';
-import { playPling, startRingtone, stopRingtone, notifyOS, unlockAudio } from './notify.js';
+import {
+  playPling, startRingtone, stopRingtone, notifyOS, unlockAudio,
+  osNotificationsEnabled, enableOsNotifications, isIOS, isMac, isStandaloneApp
+} from './notify.js';
 
 // iOS só libera áudio depois de um toque de verdade na página -- este é o
 // primeiro toque, então destrava os sons de notificação nele.
@@ -395,9 +398,40 @@ export async function setupPush() {
   }
 }
 
+const NOTIF_BANNER_DISMISS_KEY = 'nexus.notifBannerDismissed';
+
+/** Sugere ativar notificações logo após o login -- melhora bastante a
+ * experiência (nada de F5 pra ver se chegou mensagem) e a maioria nem sabe
+ * que dá pra ativar. Some sozinho se já tiver ativado ou se a pessoa
+ * dispensar (não fica insistindo a cada login). */
+function setupNotifBanner() {
+  const banner = $('#notifBanner');
+  if (!banner) return;
+  const text = $('#notifBannerText');
+  const enableBtn = $('#notifBannerEnable');
+
+  if (typeof Notification === 'undefined' || osNotificationsEnabled()
+    || localStorage.getItem(NOTIF_BANNER_DISMISS_KEY) === 'on') {
+    banner.hidden = true;
+    return;
+  }
+
+  if (isIOS() && !isStandaloneApp()) {
+    text.textContent = 'Prefira usar o PlingChat instalado (Compartilhar → Adicionar à Tela de Início) — é a única forma do iPhone avisar de mensagens novas fora do app.';
+    enableBtn.hidden = true;
+  } else {
+    text.textContent = isMac()
+      ? 'Ative as notificações do PlingChat para não perder mensagens e chamadas (no Mac, confira também os Ajustes do Sistema → Notificações).'
+      : 'Ative as notificações do PlingChat para não perder mensagens e chamadas.';
+    enableBtn.hidden = false;
+  }
+  banner.hidden = false;
+}
+
 /** Convite de servidor (?convite=) e aviso de e-mail não confirmado. */
 async function handleLaunchParams() {
   $('#verifyBanner').hidden = state.me.emailVerified || !state.me.hasEmail || !appConfig.passwordResetEnabled;
+  setupNotifBanner();
   dropParam('cadastro');
 
   const canal = params.get('canal');
@@ -1678,6 +1712,17 @@ function bindUI() {
   });
 
   $('#verifyDismiss').addEventListener('click', () => { $('#verifyBanner').hidden = true; });
+
+  $('#notifBannerDismiss').addEventListener('click', () => {
+    localStorage.setItem(NOTIF_BANNER_DISMISS_KEY, 'on');
+    $('#notifBanner').hidden = true;
+  });
+  $('#notifBannerEnable').addEventListener('click', async () => {
+    const ok = await enableOsNotifications();
+    toast(ok ? 'Notificações ativadas!' : 'Permissão recusada pelo navegador.', ok ? 'ok' : 'err');
+    localStorage.setItem(NOTIF_BANNER_DISMISS_KEY, 'on');
+    $('#notifBanner').hidden = true;
+  });
   $('#verifyResend').addEventListener('click', async () => {
     try {
       await api.post('/auth/resend-verification');

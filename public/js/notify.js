@@ -13,6 +13,16 @@ const pling = new Audio('/sounds/pling.wav');
 const ring = new Audio('/sounds/ring.wav');
 ring.loop = true;
 
+/* -------------------------------------------------------- plataforma --- */
+
+export const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+// iPadOS reporta plataforma "MacIntel" igual um Mac de verdade desde o
+// iOS 13 -- toque com mais de 1 ponto é o jeito de diferenciar (Mac normal
+// não tem tela sensível ao toque).
+export const isMac = () => /Mac/.test(navigator.platform) && navigator.maxTouchPoints <= 1;
+export const isStandaloneApp = () =>
+  window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
 export const soundsEnabled = () => localStorage.getItem(SOUND_KEY) !== 'off';
 export const setSoundsEnabled = (on) => localStorage.setItem(SOUND_KEY, on ? 'on' : 'off');
 

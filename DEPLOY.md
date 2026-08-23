@@ -96,10 +96,10 @@ Sem isso configurado, **não existe recuperação de senha** — quem esquecer a
 | Variável | Valor |
 |---|---|
 | `RESEND_API_KEY` | a chave gerada |
-| `MAIL_FROM` | `PlingChat <nao-responda@seudominio.com>` |
-| `APP_URL` | `https://nexus67.vercel.app` — usado para montar os links do e-mail |
+| `MAIL_FROM` | `PlingChat <nao-responda@plingchat.com>` |
+| `APP_URL` | `https://plingchat.com` — usado para montar os links do e-mail |
 
-Sem domínio verificado, o Resend só entrega para o e-mail da própria conta; para valer em produção, verifique um domínio.
+`plingchat.com` já está verificado no Resend — sem isso, ele só entregaria pro e-mail da própria conta (foi exatamente esse bug que fazia amigos não receberem o e-mail de confirmação).
 
 Quem entra pelo Google já vem com e-mail confirmado — o Google atesta isso no próprio token.
 

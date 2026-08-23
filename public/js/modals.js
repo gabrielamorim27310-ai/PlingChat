@@ -25,6 +25,22 @@ const cancelBtn = () => el('button', { class: 'btn btn-ghost', onclick: closeMod
 
 const field = (label, input) => el('label', { class: 'field' }, el('span', {}, label), input);
 
+/** Botões de compartilhar um link/código por e-mail e WhatsApp. */
+const shareButtons = (link, message) => [
+  el('button', {
+    class: 'icon-btn', title: 'Mandar por e-mail',
+    onclick: () => {
+      location.href = `mailto:?subject=${encodeURIComponent('Convite pro PlingChat')}&body=${encodeURIComponent(`${message}\n\n${link}`)}`;
+    }
+  }, icon('mail', 16)),
+  el('button', {
+    class: 'icon-btn', title: 'Mandar por WhatsApp',
+    onclick: () => {
+      window.open(`https://wa.me/?text=${encodeURIComponent(`${message}\n${link}`)}`, '_blank');
+    }
+  }, icon('message-circle', 16))
+];
+
 const switchRow = (label, description, value, onChange) => {
   const toggle = el('div', { class: `switch ${value ? 'on' : ''}` });
   toggle.addEventListener('click', () => {
@@ -250,7 +266,8 @@ function invite(guild) {
             await navigator.clipboard.writeText(link).catch(() => {});
             toast('Link copiado!', 'ok');
           }
-        }, 'Copiar')),
+        }, 'Copiar'),
+        ...shareButtons(link, `Vem pro servidor "${guild.name}" no PlingChat!`)),
       shareBtn),
     foot: [el('button', { class: 'btn btn-ghost', onclick: closeModal }, 'Fechar')]
   });
@@ -501,14 +518,15 @@ function appInvites() {
               await navigator.clipboard.writeText(link).catch(() => {});
               toast('Link de convite copiado!', 'ok');
             }
-          }, '🔗') : null,
+          }, icon('link-2', 16)) : null,
           item.active ? el('button', {
             class: 'icon-btn', title: 'Copiar código',
             onclick: async () => {
               await navigator.clipboard.writeText(item.code).catch(() => {});
               toast('Código copiado!', 'ok');
             }
-          }, '📋') : null,
+          }, icon('clipboard', 16)) : null,
+          item.active ? shareButtons(link, 'Vem pro PlingChat! Usa esse convite pra criar sua conta:') : null,
           item.active ? el('button', {
             class: 'icon-btn', title: 'Revogar',
             onclick: async () => {

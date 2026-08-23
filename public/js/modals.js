@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { $, el, icon, avatarNode, escapeHtml } from './util.js';
+import { $, el, icon, avatarNode, escapeHtml, initials, resizeImageToDataUrl } from './util.js';
 import { state, socket, toast, openGuild, openHome, startDM, refresh, appConfig, setupPush, applyTheme, getTheme } from './app.js';
 
 /* ============================================================ básico ==== */
@@ -577,7 +577,50 @@ function userSettings() {
   bio.value = state.me.bio || '';
 
   let color = state.me.avatarColor;
+  let photo = state.me.avatarUrl || null;  // null = sem foto (mostra a cor); string = data URL
+  let photoNode = photo ? el('img', {
+    src: photo, alt: '', style: 'width:100%;height:100%;border-radius:50%;object-fit:cover'
+  }) : null;
+
   const previewAvatar = avatarNode(state.me, { size: 64, status: false });
+  if (photoNode) previewAvatar.replaceChildren(photoNode);
+
+  const removeBtn = el('button', { class: 'btn btn-ghost', hidden: !photo, onclick: () => setPreviewPhoto(null) }, 'Remover foto');
+
+  const setPreviewPhoto = (dataUrl) => {
+    photo = dataUrl;
+    removeBtn.hidden = !photo;
+    previewAvatar.replaceChildren();
+    if (dataUrl) {
+      photoNode = el('img', { src: dataUrl, alt: '', style: 'width:100%;height:100%;border-radius:50%;object-fit:cover' });
+      previewAvatar.append(photoNode);
+      previewAvatar.style.background = color;
+    } else {
+      photoNode = null;
+      previewAvatar.style.background = color;
+      previewAvatar.textContent = initials(state.me.username);
+    }
+  };
+
+  const fileInput = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', hidden: true });
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files?.[0];
+    fileInput.value = '';
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) return toast('Escolha uma imagem de até 8MB.', 'err');
+    try {
+      const dataUrl = await resizeImageToDataUrl(file, 256);
+      setPreviewPhoto(dataUrl);
+    } catch (err) {
+      toast('Não consegui processar essa imagem.', 'err');
+    }
+  });
+
+  const photoButtons = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:10px' },
+    el('button', { class: 'btn btn-ghost', onclick: () => fileInput.click() }, icon('camera', 15), ' Alterar foto'),
+    removeBtn,
+    fileInput);
+
   const swatches = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
     colors.map((c) => {
       const dot = el('button', {
@@ -587,7 +630,7 @@ function userSettings() {
           for (const node of swatches.children) node.style.borderColor = 'transparent';
           dot.style.borderColor = '#fff';
           // só reflete no avatar se ele não tiver foto (senão a cor nem aparece)
-          if (!state.me.avatarUrl) previewAvatar.style.background = c;
+          if (!photo) previewAvatar.style.background = c;
         }
       });
       return dot;
@@ -618,11 +661,13 @@ function userSettings() {
 
   const save = async () => {
     try {
-      const { user } = await api.patch('/me', {
+      const patch = {
         avatarColor: color,
         customStatus: custom.value.trim() || null,
         bio: bio.value.trim() || null
-      });
+      };
+      if (photo !== (state.me.avatarUrl || null)) patch.avatarUrl = photo;
+      const { user } = await api.patch('/me', patch);
       state.me = user;
       socket.emit('presence:update', { status: statusSelect.value });
       state.me.status = statusSelect.value;
@@ -643,7 +688,8 @@ function userSettings() {
         el('div', {},
           el('strong', { style: 'font-size:17px' }, state.me.username),
           el('div', { style: 'font-size:12px;color:var(--text-mute)' },
-            `Seu identificador: ${state.me.username}#${state.me.tag}`))),
+            `Seu identificador: ${state.me.username}#${state.me.tag}`),
+          photoButtons)),
       field('Cor do avatar', swatches),
       field('Tema', el('div', { class: 'theme-picker' }, themeBtns)),
       field('Status', statusSelect),

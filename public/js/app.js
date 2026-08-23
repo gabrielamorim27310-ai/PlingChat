@@ -1342,7 +1342,8 @@ function mountStaticIcons() {
     btnCall: ['phone', 16],
     btnVideoCall: ['video', 16],
     btnMembers: ['users', 16],
-    replyCancel: ['close', 14]
+    replyCancel: ['close', 14],
+    membersInviteBtn: ['user-plus', 15]
   };
   for (const [id, [name, size]] of Object.entries(map)) {
     const node = document.getElementById(id);
@@ -1395,6 +1396,7 @@ function bindUI() {
   $('#btnSettings').addEventListener('click', () => openModal(modals.userSettings()));
   $('#btnMembers').addEventListener('click', () => { $('#membersPane').hidden = !$('#membersPane').hidden; });
   $('#membersSearch').addEventListener('input', debounce(renderMembers, 120));
+  $('#membersInviteBtn').addEventListener('click', () => { const g = guild(); if (g) openModal(modals.invite(g)); });
   $('#btnBotPanel').addEventListener('click', () => openModal(modals.botPanel(guild())));
 
   $('#btnMic').addEventListener('click', () => {

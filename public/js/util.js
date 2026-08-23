@@ -228,6 +228,10 @@ const ICON_PATHS = {
   contrast: [
     ['circle', { cx: 12, cy: 12, r: 10 }],
     ['path', { d: 'M12 2a10 10 0 0 1 0 20z' }]
+  ],
+  camera: [
+    ['path', { d: 'M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z' }],
+    ['circle', { cx: 12, cy: 13, r: 4 }]
   ]
 };
 
@@ -270,6 +274,35 @@ export function avatarNode(user, { size = null, status = true } = {}) {
   }
   if (status && user?.status) node.dataset.status = user.status;
   return node;
+}
+
+/**
+ * Recorta uma imagem escolhida pelo usuário em um quadrado, redimensiona
+ * para `size`×`size` e devolve um data URL JPEG comprimido — tudo no
+ * navegador, sem subir nada pra lugar nenhum antes do usuário salvar.
+ */
+export function resizeImageToDataUrl(file, size = 256) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Falha ao ler o arquivo'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Arquivo não é uma imagem válida'));
+      img.onload = () => {
+        const side = Math.min(img.width, img.height);
+        const sx = (img.width - side) / 2;
+        const sy = (img.height - side) / 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 export const debounce = (fn, ms = 250) => {

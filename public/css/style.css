@@ -391,7 +391,9 @@ button { background: none; border: 0; cursor: pointer; }
 /* ---------------------------------------------------------- membros ---- */
 .members { width: var(--members-w); background: var(--bg-1); border-left: 1px solid var(--line); display: flex; flex-direction: column; }
 .members-head { flex: none; padding: 14px 12px 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.members-head-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .members-head strong { font-size: 13px; color: var(--text-dim); }
+.members-head-top .icon-btn { width: 26px; height: 26px; flex: none; }
 .members-head input {
   background: var(--bg-0); border: 1px solid var(--line); border-radius: 8px;
   padding: 7px 10px; font-size: 13px; color: var(--text); outline: none;

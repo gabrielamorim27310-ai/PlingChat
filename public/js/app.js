@@ -470,26 +470,31 @@ function connectSocket() {
       list.push(message);
       if (message.channelId === state.activeChannelId) renderMessages();
     }
-    if (message.channelId !== state.activeChannelId && message.author.id !== state.me.id) {
-      state.unread[message.channelId] = (state.unread[message.channelId] || 0) + 1;
-      const mentioned = mentionsMe(message.content);
-      if (mentioned) state.mentioned.add(message.channelId);
-      renderRail();
-      renderSidebar();
-      const channel = channelById(message.channelId);
-      if (channel?.type === 'dm') {
-        toast(`💬 ${message.author.username}: ${message.content.slice(0, 60)}`);
-        playPling();
-        notifyOS(message.author.username, message.content.slice(0, 140), {
-          tag: message.channelId, onClick: () => openChannel(message.channelId)
-        });
-      } else if (mentioned) {
-        toast(`🔔 ${message.author.username} te citou em #${channel?.name ?? ''}`);
-        playPling();
-        notifyOS(`${message.author.username} em #${channel?.name ?? ''}`, message.content.slice(0, 140), {
+
+    const isMine = message.author.id === state.me.id;
+    const channel = channelById(message.channelId);
+    const mentioned = !isMine && mentionsMe(message.content);
+
+    // O som toca pra qualquer mensagem de outra pessoa, mesmo no canal que
+    // você já está olhando (a notificação do sistema é que só aparece com a
+    // aba sem foco -- isso já é resolvido dentro de notifyOS).
+    if (!isMine) {
+      playPling();
+      if (channel?.type === 'dm' || mentioned) {
+        const title = channel?.type === 'dm' ? message.author.username : `${message.author.username} em #${channel?.name ?? ''}`;
+        notifyOS(title, message.content.slice(0, 140), {
           tag: message.channelId, onClick: () => openChannel(message.channelId)
         });
       }
+    }
+
+    if (message.channelId !== state.activeChannelId && !isMine) {
+      state.unread[message.channelId] = (state.unread[message.channelId] || 0) + 1;
+      if (mentioned) state.mentioned.add(message.channelId);
+      renderRail();
+      renderSidebar();
+      if (channel?.type === 'dm') toast(`💬 ${message.author.username}: ${message.content.slice(0, 60)}`);
+      else if (mentioned) toast(`🔔 ${message.author.username} te citou em #${channel?.name ?? ''}`);
     } else if (message.channelId === state.activeChannelId) {
       socket.emit('channel:read', { channelId: message.channelId });
     }

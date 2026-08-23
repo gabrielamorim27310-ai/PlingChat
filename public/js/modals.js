@@ -760,21 +760,36 @@ function notifSettings() {
     'Sons de notificação', 'Toca um "pling" para mensagens e chamadas.',
     soundsEnabled(), (on) => setSoundsEnabled(on));
 
-  const osLabel = el('span', {}, osNotificationsEnabled() ? 'Notificações do sistema ativadas' : 'Ativar notificações do sistema');
-  const osBtn = el('button', {
-    class: 'btn btn-ghost btn-block',
-    onclick: async () => {
-      if (osNotificationsEnabled()) {
-        disableOsNotifications();
-      } else {
-        const ok = await enableOsNotifications();
-        if (!ok) toast('Permissão de notificação recusada pelo navegador.', 'err');
-      }
-      osLabel.textContent = osNotificationsEnabled() ? 'Notificações do sistema ativadas' : 'Ativar notificações do sistema';
-    }
-  }, icon('bell', 15), ' ', osLabel);
+  // No iPhone, notificação do sistema só existe pro app instalado na tela
+  // de início (iOS 16.4+) -- dentro do Safari normal é bloqueio da Apple,
+  // não tem permissão que resolva. Detecta isso e explica em vez de deixar
+  // o botão falhar sem dizer por quê.
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 
-  return el('div', {}, soundToggle, osBtn);
+  let osControl;
+  if (isIOS && !isStandalone) {
+    osControl = el('p', { style: 'font-size:12px;color:var(--text-mute);line-height:1.5;margin-top:4px' },
+      '📱 No iPhone, notificação do sistema só funciona com o PlingChat instalado: toque em ',
+      el('strong', {}, 'Compartilhar'), ' → ', el('strong', {}, 'Adicionar à Tela de Início'),
+      ', depois abra por esse ícone (não pelo Safari) pra ativar.');
+  } else {
+    const osLabel = el('span', {}, osNotificationsEnabled() ? 'Notificações do sistema ativadas' : 'Ativar notificações do sistema');
+    osControl = el('button', {
+      class: 'btn btn-ghost btn-block',
+      onclick: async () => {
+        if (osNotificationsEnabled()) {
+          disableOsNotifications();
+        } else {
+          const ok = await enableOsNotifications();
+          if (!ok) toast('Permissão de notificação recusada pelo navegador.', 'err');
+        }
+        osLabel.textContent = osNotificationsEnabled() ? 'Notificações do sistema ativadas' : 'Ativar notificações do sistema';
+      }
+    }, icon('bell', 15), ' ', osLabel);
+  }
+
+  return el('div', {}, soundToggle, osControl);
 }
 
 function userSettings() {

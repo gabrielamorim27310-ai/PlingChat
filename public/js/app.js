@@ -3,7 +3,25 @@ import { API_BASE } from './config.js';
 import { $, el, icon, avatarNode, renderMarkdown, formatTime, formatDay, dayKey, initials, debounce } from './util.js';
 import { VoiceClient } from './voice.js';
 import { openModal, closeModal, modals } from './modals.js';
-import { playPling, startRingtone, stopRingtone, notifyOS } from './notify.js';
+import { playPling, startRingtone, stopRingtone, notifyOS, unlockAudio } from './notify.js';
+
+// iOS só libera áudio depois de um toque de verdade na página -- este é o
+// primeiro toque, então destrava os sons de notificação nele.
+document.addEventListener('pointerdown', unlockAudio, { once: true });
+
+// Registra o service worker cedo (não só quando a pessoa ativa push) --
+// isso também é um dos requisitos pra Android/desktop oferecerem "instalar
+// app" sozinho, e deixa o push pronto pra quando ela ativar depois.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+  // Clicar numa notificação com a aba já aberta só foca a janela (o SW não
+  // navega sozinho) -- ele manda essa mensagem pra gente abrir o canal certo.
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type !== 'notification-click') return;
+    const id = new URL(event.data.url, location.origin).searchParams.get('canal');
+    if (id) openChannel(id);
+  });
+}
 
 /* =============================================================== tema === */
 
@@ -483,7 +501,7 @@ function connectSocket() {
       if (channel?.type === 'dm' || mentioned) {
         const title = channel?.type === 'dm' ? message.author.username : `${message.author.username} em #${channel?.name ?? ''}`;
         notifyOS(title, message.content.slice(0, 140), {
-          tag: message.channelId, onClick: () => openChannel(message.channelId)
+          tag: message.channelId, url: `/?canal=${message.channelId}`, onClick: () => openChannel(message.channelId)
         });
       }
     }
@@ -622,7 +640,7 @@ function connectSocket() {
     showRing();
     startRingtone();
     notifyOS(`${from.username} está ligando`, video ? 'Chamada de vídeo' : 'Chamada de voz', {
-      tag: `call:${channelId}`, onClick: () => openChannel(channelId)
+      tag: `call:${channelId}`, url: `/?canal=${channelId}`, onClick: () => openChannel(channelId)
     });
   });
 

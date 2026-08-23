@@ -1,6 +1,9 @@
 import { api } from './api.js';
 import { $, el, icon, avatarNode, escapeHtml, initials } from './util.js';
 import { state, socket, toast, openGuild, openHome, startDM, refresh, appConfig, setupPush, applyTheme, getTheme } from './app.js';
+import {
+  soundsEnabled, setSoundsEnabled, osNotificationsEnabled, enableOsNotifications, disableOsNotifications
+} from './notify.js';
 
 /* ============================================================ básico ==== */
 
@@ -751,6 +754,29 @@ function photoEditor(file) {
   });
 }
 
+/** Sons de "pling" + notificações do sistema com a aba aberta em segundo plano. */
+function notifSettings() {
+  const soundToggle = switchRow(
+    'Sons de notificação', 'Toca um "pling" para mensagens e chamadas.',
+    soundsEnabled(), (on) => setSoundsEnabled(on));
+
+  const osLabel = el('span', {}, osNotificationsEnabled() ? 'Notificações do sistema ativadas' : 'Ativar notificações do sistema');
+  const osBtn = el('button', {
+    class: 'btn btn-ghost btn-block',
+    onclick: async () => {
+      if (osNotificationsEnabled()) {
+        disableOsNotifications();
+      } else {
+        const ok = await enableOsNotifications();
+        if (!ok) toast('Permissão de notificação recusada pelo navegador.', 'err');
+      }
+      osLabel.textContent = osNotificationsEnabled() ? 'Notificações do sistema ativadas' : 'Ativar notificações do sistema';
+    }
+  }, icon('bell', 15), ' ', osLabel);
+
+  return el('div', {}, soundToggle, osBtn);
+}
+
 function userSettings() {
   const colors = ['#9b4dff', '#d94fc0', '#5eead4', '#37b6f0', '#f0c264', '#ff7a7a', '#3d7ce0', '#7ec8f5', '#ff7ab8'];
   const custom = el('input', { type: 'text', maxlength: 60, value: state.me.customStatus || '', placeholder: 'Jogando alguma coisa...' });
@@ -897,11 +923,12 @@ function userSettings() {
         style: 'margin-top:6px',
         onclick: () => openModal(appInvites())
       }, icon('user-plus', 15), ' Meus convites de cadastro'),
+      field('Notificações', notifSettings()),
       appConfig.vapidPublicKey ? el('button', {
         class: 'btn btn-ghost btn-block',
         style: 'margin-top:6px',
         onclick: setupPush
-      }, icon('bell', 15), Notification?.permission === 'granted' ? ' Notificações ativadas' : ' Ativar notificações') : null),
+      }, icon('bell', 15), Notification?.permission === 'granted' ? ' Notificações push ativadas' : ' Ativar notificações push (app fechado)') : null),
     foot: [
       el('button', {
         class: 'btn btn-danger',

@@ -3,6 +3,7 @@ import { API_BASE } from './config.js';
 import { $, el, icon, avatarNode, renderMarkdown, formatTime, formatDay, dayKey, initials, debounce } from './util.js';
 import { VoiceClient } from './voice.js';
 import { openModal, closeModal, modals } from './modals.js';
+import { playPling, startRingtone, stopRingtone, notifyOS } from './notify.js';
 
 /* =============================================================== tema === */
 
@@ -476,8 +477,19 @@ function connectSocket() {
       renderRail();
       renderSidebar();
       const channel = channelById(message.channelId);
-      if (channel?.type === 'dm') toast(`💬 ${message.author.username}: ${message.content.slice(0, 60)}`);
-      else if (mentioned) toast(`🔔 ${message.author.username} te citou em #${channel?.name ?? ''}`);
+      if (channel?.type === 'dm') {
+        toast(`💬 ${message.author.username}: ${message.content.slice(0, 60)}`);
+        playPling();
+        notifyOS(message.author.username, message.content.slice(0, 140), {
+          tag: message.channelId, onClick: () => openChannel(message.channelId)
+        });
+      } else if (mentioned) {
+        toast(`🔔 ${message.author.username} te citou em #${channel?.name ?? ''}`);
+        playPling();
+        notifyOS(`${message.author.username} em #${channel?.name ?? ''}`, message.content.slice(0, 140), {
+          tag: message.channelId, onClick: () => openChannel(message.channelId)
+        });
+      }
     } else if (message.channelId === state.activeChannelId) {
       socket.emit('channel:read', { channelId: message.channelId });
     }
@@ -564,10 +576,14 @@ function connectSocket() {
   socket.on('call:incoming', ({ channelId, video, from }) => {
     state.pendingCall = { channelId, video, from };
     showRing();
+    startRingtone();
+    notifyOS(`${from.username} está ligando`, video ? 'Chamada de vídeo' : 'Chamada de voz', {
+      tag: `call:${channelId}`, onClick: () => openChannel(channelId)
+    });
   });
 
   socket.on('call:declined', ({ by }) => toast(`${by.username} recusou a chamada.`, 'err'));
-  socket.on('call:cancelled', () => { state.pendingCall = null; $('#ringOverlay').hidden = true; });
+  socket.on('call:cancelled', () => { state.pendingCall = null; $('#ringOverlay').hidden = true; stopRingtone(); });
 
   setInterval(renderTyping, 1500);
 }
@@ -1566,6 +1582,7 @@ function bindUI() {
   $('#ringAccept').addEventListener('click', async () => {
     const call = state.pendingCall;
     $('#ringOverlay').hidden = true;
+    stopRingtone();
     state.pendingCall = null;
     if (!call) return;
     await openChannel(call.channelId);
@@ -1574,6 +1591,7 @@ function bindUI() {
   $('#ringDecline').addEventListener('click', () => {
     const call = state.pendingCall;
     $('#ringOverlay').hidden = true;
+    stopRingtone();
     state.pendingCall = null;
     if (call) socket.emit('call:decline', { channelId: call.channelId });
   });

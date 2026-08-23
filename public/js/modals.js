@@ -559,6 +559,7 @@ function userSettings() {
   bio.value = state.me.bio || '';
 
   let color = state.me.avatarColor;
+  const previewAvatar = avatarNode(state.me, { size: 64, status: false });
   const swatches = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
     colors.map((c) => {
       const dot = el('button', {
@@ -567,6 +568,8 @@ function userSettings() {
           color = c;
           for (const node of swatches.children) node.style.borderColor = 'transparent';
           dot.style.borderColor = '#fff';
+          // só reflete no avatar se ele não tiver foto (senão a cor nem aparece)
+          if (!state.me.avatarUrl) previewAvatar.style.background = c;
         }
       });
       return dot;
@@ -618,7 +621,7 @@ function userSettings() {
     subtitle: `${state.me.username}#${state.me.tag}`,
     body: el('div', {},
       el('div', { style: 'display:flex;gap:14px;align-items:center;margin-bottom:18px' },
-        avatarNode(state.me, { size: 64, status: false }),
+        previewAvatar,
         el('div', {},
           el('strong', { style: 'font-size:17px' }, state.me.username),
           el('div', { style: 'font-size:12px;color:var(--text-mute)' },

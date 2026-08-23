@@ -344,10 +344,11 @@ button { background: none; border: 0; cursor: pointer; }
 /* Modo "spotlight" (igual Zoom/Meet): quando alguem compartilha a tela, ela
    ocupa a area principal e as cameras encolhem numa faixa lateral. */
 .stage-grid.spotlight {
-  display: grid; grid-template-columns: 1fr 190px; align-items: stretch; justify-items: stretch;
+  display: grid; grid-template-columns: 1fr 190px; grid-template-rows: 1fr;
+  align-items: stretch; justify-items: stretch; align-content: stretch; justify-content: stretch;
 }
 .spotlight-main { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; }
-.spotlight-main .tile { width: 100%; height: 100%; max-width: none; max-height: none; }
+.spotlight-main .tile { width: 100%; height: 100%; max-width: none; max-height: none; aspect-ratio: auto; }
 .spotlight-side { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
 .spotlight-side .tile { width: 100%; max-width: none; flex: none; height: auto; max-height: 130px; }
 @media (max-width: 860px) {

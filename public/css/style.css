@@ -170,11 +170,12 @@ button { background: none; border: 0; cursor: pointer; }
 .sidebar { grid-column: 2; }
 .main { grid-column: 3; }
 .members { grid-column: 4; }
-/* colapsa rail + sidebar juntos (o botão que faz isso mora no cabeçalho do
-   chat, que nunca faz parte dessas colunas -- então continua alcançável
-   pra reabrir, não importa o que esteja colapsado). */
-.app.nav-collapsed { grid-template-columns: 0 0 1fr auto; }
-.app.nav-collapsed .rail, .app.nav-collapsed .sidebar { display: none; }
+/* colapsa só a sidebar (lista de canais/DMs) -- o rail (ícones de
+   servidor) fica sempre visível. O botão que faz isso mora no cabeçalho
+   do chat, que nunca faz parte dessas colunas -- então continua
+   alcançável pra reabrir, não importa o que esteja colapsado. */
+.app.nav-collapsed { grid-template-columns: var(--rail-w) 0 1fr auto; }
+.app.nav-collapsed .sidebar { display: none; }
 
 /* ------------------------------------------------------------- rail ---- */
 .rail { background: var(--bg-0); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px 0; overflow-y: auto; }

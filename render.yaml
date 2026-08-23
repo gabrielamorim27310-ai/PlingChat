@@ -1,12 +1,12 @@
-# Backend do PlingChat (Socket.IO + SQLite). Precisa de processo persistente e
-# disco montado — por isso nao roda em plataforma serverless.
+# Backend do PlingChat (Socket.IO + Postgres via Supabase). Precisa de
+# processo persistente (WebSocket) — por isso nao roda em plataforma
+# serverless. O banco de dados fica no Supabase, entao o plano "free" do
+# Render serve tranquilo: um respin/redeploy nao perde mais nenhum dado.
 services:
   - type: web
     name: nexus-api
     runtime: node
-    # O plano free nao permite disco persistente: o banco seria zerado a cada
-    # deploy. Use "starter" (ou superior) se quiser manter os dados.
-    plan: starter
+    plan: free
     buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /health
@@ -16,6 +16,10 @@ services:
         value: "24"
       - key: NEXUS_SECRET
         generateValue: true
+      # String de conexao do Supabase (Transaction Pooler, porta 6543 —
+      # a conexao direta e IPv6-only e nao resolve no Render).
+      - key: DATABASE_URL
+        sync: false
       # Dominio da Vercel que pode chamar esta API, ex:
       # https://nexus.vercel.app
       - key: ALLOWED_ORIGINS
@@ -47,7 +51,3 @@ services:
         sync: false
       - key: VAPID_SUBJECT
         sync: false
-    disk:
-      name: nexus-data
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1

@@ -8,11 +8,13 @@ const jwt = require('jsonwebtoken');
 
 const store = require('./store');
 const invites = require('./invites');
-const { DATA_DIR } = require('./db');
 
-/** Segredo persistido em disco para os tokens sobreviverem a um restart. */
+const DATA_DIR = path.join(__dirname, '..', 'data');
+
+/** Segredo persistido em disco para os tokens sobreviverem a um restart local. */
 function loadSecret() {
   if (process.env.NEXUS_SECRET) return process.env.NEXUS_SECRET;
+  fs.mkdirSync(DATA_DIR, { recursive: true });
   const file = path.join(DATA_DIR, '.secret');
   if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8').trim();
   const secret = crypto.randomBytes(48).toString('hex');
@@ -40,19 +42,19 @@ async function register({ username, email, password, inviteCode }) {
   if (!/^[\w .\-À-ÿ]{2,32}$/u.test(username)) throw new Error('Nome de usuario invalido (2 a 32 caracteres)');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('E-mail invalido');
   if (String(password || '').length < 6) throw new Error('A senha precisa de pelo menos 6 caracteres');
-  if (store.getUserByEmail(email)) throw new Error('Ja existe uma conta com este e-mail');
+  if (await store.getUserByEmail(email)) throw new Error('Ja existe uma conta com este e-mail');
 
   // Valida o convite antes de criar qualquer coisa.
-  invites.assertUsable(inviteCode);
+  await invites.assertUsable(inviteCode);
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const user = store.createUser({ username, email, passwordHash });
+  const user = await store.createUser({ username, email, passwordHash });
 
-  if (!invites.isOpen()) {
-    const code = invites.consume(inviteCode, user.id);
+  if (!(await invites.isOpen())) {
+    const code = await invites.consume(inviteCode, user.id);
     // O convite ja vem com amizade: quem convidou e quem chegou nao precisam
     // se pedir amizade depois, ja se conhecem.
-    if (code?.created_by) store.autoFriend(code.created_by, user.id);
+    if (code?.created_by) await store.autoFriend(code.created_by, user.id);
   }
 
   return { user: store.publicUser(user), token: signToken(user.id) };
@@ -62,12 +64,12 @@ async function register({ username, email, password, inviteCode }) {
 async function setPassword(userId, password) {
   if (String(password || '').length < 6) throw new Error('A senha precisa de pelo menos 6 caracteres');
   const hash = await bcrypt.hash(password, 10);
-  require('./db').run('UPDATE users SET password_hash = ? WHERE id = ?', hash, userId);
+  await require('./db').run('UPDATE users SET password_hash = ? WHERE id = ?', hash, userId);
   return store.getUser(userId);
 }
 
 async function login({ email, password }) {
-  const user = store.getUserByEmail(String(email || '').trim().toLowerCase());
+  const user = await store.getUserByEmail(String(email || '').trim().toLowerCase());
   if (!user || !user.password_hash) throw new Error('E-mail ou senha incorretos');
   const ok = await bcrypt.compare(String(password || ''), user.password_hash);
   if (!ok) throw new Error('E-mail ou senha incorretos');
@@ -75,15 +77,19 @@ async function login({ email, password }) {
 }
 
 /** Middleware Express: exige um Bearer token valido. */
-function requireAuth(req, res, next) {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  const userId = token && verifyToken(token);
-  if (!userId) return res.status(401).json({ error: 'Nao autenticado' });
-  const user = store.getUser(userId);
-  if (!user) return res.status(401).json({ error: 'Sessao invalida' });
-  req.user = user;
-  next();
+async function requireAuth(req, res, next) {
+  try {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+    const userId = token && verifyToken(token);
+    if (!userId) return res.status(401).json({ error: 'Nao autenticado' });
+    const user = await store.getUser(userId);
+    if (!user) return res.status(401).json({ error: 'Sessao invalida' });
+    req.user = user;
+    next();
+  } catch (err) {
+    res.status(500).json({ error: 'Erro interno de autenticacao' });
+  }
 }
 
 module.exports = { register, login, setPassword, signToken, verifyToken, requireAuth };

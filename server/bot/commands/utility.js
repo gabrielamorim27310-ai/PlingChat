@@ -95,8 +95,8 @@ const commands = [
     aliases: ['av'],
     description: 'Mostra o avatar de um usuario',
     usage: 'avatar [@usuario]',
-    run(ctx) {
-      const target = ctx.argStr && ctx.guild ? store.findMemberByName(ctx.guild.id, ctx.argStr) : ctx.user;
+    async run(ctx) {
+      const target = ctx.argStr && ctx.guild ? await store.findMemberByName(ctx.guild.id, ctx.argStr) : ctx.user;
       if (!target) return ctx.reply('', ctx.embed({ color: ctx.COLORS.err, description: 'Usuario nao encontrado.' }));
       return ctx.reply('', ctx.embed({
         color: target.avatar_color,
@@ -111,11 +111,11 @@ const commands = [
     description: 'Informacoes sobre um usuario',
     usage: 'userinfo [@usuario]',
     guildOnly: true,
-    run(ctx) {
-      const target = ctx.argStr ? store.findMemberByName(ctx.guild.id, ctx.argStr) : ctx.user;
+    async run(ctx) {
+      const target = ctx.argStr ? await store.findMemberByName(ctx.guild.id, ctx.argStr) : ctx.user;
       if (!target) return ctx.reply('', ctx.embed({ color: ctx.COLORS.err, description: 'Usuario nao encontrado.' }));
-      const member = store.getMember(ctx.guild.id, target.id);
-      const warns = get('SELECT COUNT(*) AS n FROM warns WHERE guild_id = ? AND user_id = ?', ctx.guild.id, target.id)?.n ?? 0;
+      const member = await store.getMember(ctx.guild.id, target.id);
+      const warns = (await get('SELECT COUNT(*) AS n FROM warns WHERE guild_id = ? AND user_id = ?', ctx.guild.id, target.id))?.n ?? 0;
       return ctx.reply('', ctx.embed({
         color: target.avatar_color,
         title: `${target.username}#${target.tag}`,
@@ -137,11 +137,11 @@ const commands = [
     aliases: ['servidor', 'guild'],
     description: 'Informacoes sobre o servidor',
     guildOnly: true,
-    run(ctx) {
+    async run(ctx) {
       const g = ctx.guild;
-      const members = store.listMembers(g.id);
-      const channels = store.listChannels(g.id);
-      const owner = store.getUser(g.owner_id);
+      const members = await store.listMembers(g.id);
+      const channels = await store.listChannels(g.id);
+      const owner = await store.getUser(g.owner_id);
       return ctx.reply('', ctx.embed({
         color: g.icon_color,
         title: g.name,
@@ -176,7 +176,7 @@ const commands = [
     description: 'Cria uma enquete com ate 5 opcoes',
     usage: 'enquete Pergunta? | opcao 1 | opcao 2',
     guildOnly: true,
-    run(ctx) {
+    async run(ctx) {
       const parts = ctx.argStr.split('|').map((p) => p.trim()).filter(Boolean);
       if (parts.length < 3) {
         return ctx.reply('', ctx.embed({
@@ -188,7 +188,7 @@ const commands = [
       const options = parts.slice(1, 6);
       const emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
 
-      const msg = ctx.reply('', ctx.embed({
+      const msg = await ctx.reply('', ctx.embed({
         color: ctx.COLORS.info,
         title: `📊 ${question}`,
         description: options.map((o, i) => `${emojis[i]} ${o}`).join('\n'),
@@ -196,7 +196,7 @@ const commands = [
         poll: { options, emojis: emojis.slice(0, options.length) }
       }));
 
-      run('INSERT INTO polls (message_id, channel_id, question, options) VALUES (?, ?, ?, ?)',
+      await run('INSERT INTO polls (message_id, channel_id, question, options) VALUES (?, ?, ?, ?)',
         msg.id, ctx.channel.id, question, JSON.stringify(options));
       return msg;
     }
@@ -206,7 +206,7 @@ const commands = [
     aliases: ['remind', 'lembrar'],
     description: 'Cria um lembrete',
     usage: 'lembrete 10m tomar agua',
-    run(ctx) {
+    async run(ctx) {
       const [durationText, ...rest] = ctx.args;
       const ms = parseDuration(durationText);
       const text = rest.join(' ');
@@ -216,7 +216,7 @@ const commands = [
           description: `Use: \`${ctx.prefix}lembrete 10m tomar agua\` (s, m, h ou d)`
         }));
       }
-      run('INSERT INTO reminders (id, user_id, channel_id, text, remind_at) VALUES (?, ?, ?, ?, ?)',
+      await run('INSERT INTO reminders (id, user_id, channel_id, text, remind_at) VALUES (?, ?, ?, ?, ?)',
         newId(), ctx.user.id, ctx.channel.id, text, Date.now() + ms);
       return ctx.reply('', ctx.embed({
         color: ctx.COLORS.ok,
@@ -271,8 +271,8 @@ const commands = [
     description: 'Sorteia um membro do servidor',
     usage: 'sorteio [premio]',
     guildOnly: true,
-    run(ctx) {
-      const members = store.listMembers(ctx.guild.id).filter((m) => !m.isBot);
+    async run(ctx) {
+      const members = (await store.listMembers(ctx.guild.id)).filter((m) => !m.isBot);
       if (!members.length) return ctx.reply('Nao ha membros para sortear.');
       const winner = members[Math.floor(Math.random() * members.length)];
       return ctx.reply('', ctx.embed({
@@ -288,8 +288,8 @@ const commands = [
     aliases: ['membercount'],
     description: 'Quantos membros o servidor tem',
     guildOnly: true,
-    run(ctx) {
-      const members = store.listMembers(ctx.guild.id);
+    async run(ctx) {
+      const members = await store.listMembers(ctx.guild.id);
       const online = members.filter((m) => m.status !== 'offline').length;
       return ctx.reply('', ctx.embed({
         color: ctx.COLORS.info,
@@ -303,9 +303,9 @@ const commands = [
     description: 'Faz o bot repetir uma mensagem',
     usage: 'dizer texto',
     permission: 'mod',
-    run(ctx) {
+    async run(ctx) {
       if (!ctx.argStr) return ctx.reply('O que devo dizer?');
-      store.deleteMessage(ctx.message.id);
+      await store.deleteMessage(ctx.message.id);
       if (ctx.bot.deliver) ctx.bot.deliver({ __deleted: true, id: ctx.message.id, channelId: ctx.channel.id });
       return ctx.reply(ctx.argStr);
     }

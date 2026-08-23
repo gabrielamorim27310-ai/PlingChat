@@ -18,10 +18,10 @@ const commands = [
     description: 'Mostra a configuracao do bot neste servidor',
     guildOnly: true,
     permission: 'admin',
-    run(ctx) {
-      const s = store.getSettings(ctx.guild.id);
-      const welcomeChannel = s.welcome_channel_id ? store.getChannel(s.welcome_channel_id) : null;
-      const logChannel = s.log_channel_id ? store.getChannel(s.log_channel_id) : null;
+    async run(ctx) {
+      const s = await store.getSettings(ctx.guild.id);
+      const welcomeChannel = s.welcome_channel_id ? await store.getChannel(s.welcome_channel_id) : null;
+      const logChannel = s.log_channel_id ? await store.getChannel(s.log_channel_id) : null;
       return ctx.reply('', ctx.embed({
         color: ctx.COLORS.brand,
         title: `⚙️ Configuracao do Nexy — ${ctx.guild.name}`,
@@ -47,10 +47,10 @@ const commands = [
     usage: 'prefixo ?',
     guildOnly: true,
     permission: 'admin',
-    run(ctx) {
+    async run(ctx) {
       const prefix = ctx.argStr.trim();
       if (!prefix || prefix.length > 3) return ctx.reply('Escolha um prefixo de 1 a 3 caracteres. Ex: `!prefixo ?`');
-      store.updateSettings(ctx.guild.id, { prefix });
+      await store.updateSettings(ctx.guild.id, { prefix });
       ctx.bot.deliver?.({ __settingsUpdated: true, guildId: ctx.guild.id });
       return ctx.reply('', ctx.embed({ color: ctx.COLORS.ok, description: `✅ Prefixo alterado para \`${prefix}\`` }));
     }
@@ -62,7 +62,7 @@ const commands = [
     usage: 'boasvindas #canal | Bem-vindo {user} ao {server}!',
     guildOnly: true,
     permission: 'admin',
-    run(ctx) {
+    async run(ctx) {
       const [channelPart, ...messageParts] = ctx.argStr.split('|');
       if (!channelPart?.trim()) {
         return ctx.reply('', ctx.embed({
@@ -71,18 +71,19 @@ const commands = [
         }));
       }
       if (/^(off|desligar)$/i.test(channelPart.trim())) {
-        store.updateSettings(ctx.guild.id, { welcome_channel_id: null });
+        await store.updateSettings(ctx.guild.id, { welcome_channel_id: null });
         return ctx.reply('', ctx.embed({ color: ctx.COLORS.warn, description: '🔕 Boas-vindas desativadas.' }));
       }
-      const channel = store.findChannelByName(ctx.guild.id, channelPart.trim());
+      const channel = await store.findChannelByName(ctx.guild.id, channelPart.trim());
       if (!channel || channel.type !== 'text') return ctx.reply('Canal de texto nao encontrado.');
       const patch = { welcome_channel_id: channel.id };
       if (messageParts.length) patch.welcome_message = messageParts.join('|').trim();
-      store.updateSettings(ctx.guild.id, patch);
+      await store.updateSettings(ctx.guild.id, patch);
+      const updated = await store.getSettings(ctx.guild.id);
       return ctx.reply('', ctx.embed({
         color: ctx.COLORS.ok,
         title: '👋 Boas-vindas configuradas',
-        description: `Canal: **#${channel.name}**\nMensagem: ${store.getSettings(ctx.guild.id).welcome_message}`
+        description: `Canal: **#${channel.name}**\nMensagem: ${updated.welcome_message}`
       }));
     }
   },
@@ -93,9 +94,9 @@ const commands = [
     usage: 'despedida {user} nos deixou...',
     guildOnly: true,
     permission: 'admin',
-    run(ctx) {
+    async run(ctx) {
       if (!ctx.argStr) return ctx.reply('Escreva a mensagem. Variaveis: `{user}`, `{count}`');
-      store.updateSettings(ctx.guild.id, { goodbye_message: ctx.argStr });
+      await store.updateSettings(ctx.guild.id, { goodbye_message: ctx.argStr });
       return ctx.reply('', ctx.embed({ color: ctx.COLORS.ok, description: '✅ Mensagem de despedida atualizada.' }));
     }
   },
@@ -105,14 +106,14 @@ const commands = [
     usage: 'logs #canal | logs off',
     guildOnly: true,
     permission: 'admin',
-    run(ctx) {
+    async run(ctx) {
       if (/^(off|desligar)$/i.test(ctx.argStr.trim())) {
-        store.updateSettings(ctx.guild.id, { log_channel_id: null });
+        await store.updateSettings(ctx.guild.id, { log_channel_id: null });
         return ctx.reply('', ctx.embed({ color: ctx.COLORS.warn, description: '🔕 Logs desativados.' }));
       }
-      const channel = store.findChannelByName(ctx.guild.id, ctx.argStr);
+      const channel = await store.findChannelByName(ctx.guild.id, ctx.argStr);
       if (!channel || channel.type !== 'text') return ctx.reply('Canal de texto nao encontrado.');
-      store.updateSettings(ctx.guild.id, { log_channel_id: channel.id });
+      await store.updateSettings(ctx.guild.id, { log_channel_id: channel.id });
       return ctx.reply('', ctx.embed({ color: ctx.COLORS.ok, description: `📋 Logs serao enviados em **#${channel.name}**.` }));
     }
   },
@@ -122,14 +123,14 @@ const commands = [
     usage: 'automod links|spam|caps|palavras on/off',
     guildOnly: true,
     permission: 'admin',
-    run(ctx) {
+    async run(ctx) {
       const [featureRaw, ...rest] = ctx.args;
       const feature = (featureRaw || '').toLowerCase();
       const map = { links: 'automod_links', spam: 'automod_spam', caps: 'automod_caps' };
 
       if (feature === 'palavras') {
         const words = rest.join(' ').trim();
-        store.updateSettings(ctx.guild.id, { automod_words: words });
+        await store.updateSettings(ctx.guild.id, { automod_words: words });
         return ctx.reply('', ctx.embed({
           color: ctx.COLORS.ok,
           description: words ? `🚫 Palavras bloqueadas: \`${words}\`` : '✅ Lista de palavras bloqueadas limpa.'
@@ -145,7 +146,7 @@ const commands = [
 
       const value = parseBool(rest[0]);
       if (value === null) return ctx.reply('Diga `on` ou `off`.');
-      store.updateSettings(ctx.guild.id, { [map[feature]]: value });
+      await store.updateSettings(ctx.guild.id, { [map[feature]]: value });
       return ctx.reply('', ctx.embed({
         color: value ? ctx.COLORS.ok : ctx.COLORS.warn,
         description: `🛡️ Automod **${feature}**: ${onOff(value)}`
@@ -159,10 +160,10 @@ const commands = [
     usage: 'niveis on|off',
     guildOnly: true,
     permission: 'admin',
-    run(ctx) {
+    async run(ctx) {
       const value = parseBool(ctx.args[0]);
       if (value === null) return ctx.reply('Use `!niveis on` ou `!niveis off`.');
-      store.updateSettings(ctx.guild.id, { levels_enabled: value });
+      await store.updateSettings(ctx.guild.id, { levels_enabled: value });
       return ctx.reply('', ctx.embed({ color: ctx.COLORS.ok, description: `📈 Sistema de niveis: ${onOff(value)}` }));
     }
   },
@@ -173,9 +174,9 @@ const commands = [
     usage: 'mensagemnivel Parabens {user}, nivel {level}!',
     guildOnly: true,
     permission: 'admin',
-    run(ctx) {
+    async run(ctx) {
       if (!ctx.argStr) return ctx.reply('Escreva a mensagem. Variaveis: `{user}`, `{level}`, `{server}`');
-      store.updateSettings(ctx.guild.id, { levelup_message: ctx.argStr });
+      await store.updateSettings(ctx.guild.id, { levelup_message: ctx.argStr });
       return ctx.reply('', ctx.embed({ color: ctx.COLORS.ok, description: '✅ Mensagem de level up atualizada.' }));
     }
   },
@@ -186,13 +187,13 @@ const commands = [
     usage: 'addcmd regras | Leia o canal #regras!',
     guildOnly: true,
     permission: 'admin',
-    run(ctx) {
+    async run(ctx) {
       const [nameRaw, ...responseParts] = ctx.argStr.split('|');
       const name = (nameRaw || '').trim().toLowerCase();
       const response = responseParts.join('|').trim();
       if (!name || !response) return ctx.reply('Use: `!addcmd regras | Leia as regras em #regras`');
       if (ctx.bot.commands.has(name)) return ctx.reply('Ja existe um comando nativo com esse nome.');
-      run(
+      await run(
         `INSERT INTO custom_commands (guild_id, name, response) VALUES (?, ?, ?)
          ON CONFLICT(guild_id, name) DO UPDATE SET response = excluded.response`,
         ctx.guild.id, name, response
@@ -210,9 +211,9 @@ const commands = [
     usage: 'delcmd regras',
     guildOnly: true,
     permission: 'admin',
-    run(ctx) {
+    async run(ctx) {
       const name = ctx.argStr.trim().toLowerCase();
-      run('DELETE FROM custom_commands WHERE guild_id = ? AND name = ?', ctx.guild.id, name);
+      await run('DELETE FROM custom_commands WHERE guild_id = ? AND name = ?', ctx.guild.id, name);
       return ctx.reply('', ctx.embed({ color: ctx.COLORS.warn, description: `🗑️ Comando \`${name}\` removido.` }));
     }
   },
@@ -221,8 +222,8 @@ const commands = [
     aliases: ['comandospersonalizados'],
     description: 'Lista os comandos personalizados do servidor',
     guildOnly: true,
-    run(ctx) {
-      const rows = all('SELECT * FROM custom_commands WHERE guild_id = ?', ctx.guild.id);
+    async run(ctx) {
+      const rows = await all('SELECT * FROM custom_commands WHERE guild_id = ?', ctx.guild.id);
       if (!rows.length) return ctx.reply('Nenhum comando personalizado ainda.');
       return ctx.reply('', ctx.embed({
         color: ctx.COLORS.brand,

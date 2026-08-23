@@ -9,10 +9,11 @@ const express = require('express');
 
 const api = require('./api');
 const { attachRealtime } = require('./realtime');
-const { DATA_DIR } = require('./db');
+const db = require('./db');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const DATA_DIR = path.join(__dirname, '..', 'data');
 
 const app = express();
 
@@ -77,16 +78,25 @@ function localAddresses() {
   return out;
 }
 
-server.listen(PORT, () => {
-  const scheme = useHttps ? 'https' : 'http';
-  console.log('');
-  console.log('  ⬢  PlingChat rodando');
-  console.log(`     local:  ${scheme}://localhost:${PORT}`);
-  for (const addr of localAddresses()) console.log(`     rede:   ${scheme}://${addr}:${PORT}`);
-  if (!useHttps) {
+async function main() {
+  await db.migrate();
+
+  server.listen(PORT, () => {
+    const scheme = useHttps ? 'https' : 'http';
     console.log('');
-    console.log('     obs: camera/microfone so funcionam em localhost sem HTTPS.');
-    console.log('          para usar na rede local, gere data/cert.pem e data/key.pem.');
-  }
-  console.log('');
+    console.log('  ⬢  PlingChat rodando');
+    console.log(`     local:  ${scheme}://localhost:${PORT}`);
+    for (const addr of localAddresses()) console.log(`     rede:   ${scheme}://${addr}:${PORT}`);
+    if (!useHttps) {
+      console.log('');
+      console.log('     obs: camera/microfone so funcionam em localhost sem HTTPS.');
+      console.log('          para usar na rede local, gere data/cert.pem e data/key.pem.');
+    }
+    console.log('');
+  });
+}
+
+main().catch((err) => {
+  console.error('Falha ao subir o servidor:', err.message);
+  process.exit(1);
 });

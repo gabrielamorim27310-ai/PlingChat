@@ -27,7 +27,7 @@ if (isEnabled()) webpush.setVapidDetails(SUBJECT, PUBLIC_KEY, PRIVATE_KEY);
  */
 async function notify(userId, { title, body, tag = null, url = '/' }) {
   if (!isEnabled()) return;
-  const subs = store.listSubscriptions(userId);
+  const subs = await store.listSubscriptions(userId);
   if (!subs.length) return;
 
   const payload = JSON.stringify({ title, body, tag, url });
@@ -38,7 +38,7 @@ async function notify(userId, { title, body, tag = null, url = '/' }) {
       await webpush.sendNotification(target, payload);
     } catch (err) {
       // 404/410 = inscricao morta (usuario desinstalou, limpou dados, etc.) — remove.
-      if (err.statusCode === 404 || err.statusCode === 410) store.removeSubscription(sub.endpoint);
+      if (err.statusCode === 404 || err.statusCode === 410) await store.removeSubscription(sub.endpoint);
       else console.warn('push: falha ao enviar', err.statusCode || err.message);
     }
   }));

@@ -72,34 +72,38 @@ function usernameFrom(payload) {
 async function loginWithGoogle(credential, inviteCode = null) {
   const payload = await verifyIdToken(credential);
 
-  let user = store.getUserByGoogleSub(payload.sub);
+  let user = await store.getUserByGoogleSub(payload.sub);
 
   if (!user && payload.email) {
-    user = store.getUserByEmail(payload.email);
-    if (user) run('UPDATE users SET google_sub = ? WHERE id = ?', payload.sub, user.id);
+    user = await store.getUserByEmail(payload.email);
+    if (user) await run('UPDATE users SET google_sub = ? WHERE id = ?', payload.sub, user.id);
   }
 
   if (!user) {
     // Conta nova pelo Google tambem precisa de convite quando o cadastro
     // esta fechado.
-    invites.assertUsable(inviteCode);
+    await invites.assertUsable(inviteCode);
 
-    user = store.createUser({
+    user = await store.createUser({
       username: usernameFrom(payload),
       email: payload.email ? String(payload.email).toLowerCase() : null,
       passwordHash: null
     });
-    run('UPDATE users SET google_sub = ? WHERE id = ?', payload.sub, user.id);
+    await run('UPDATE users SET google_sub = ? WHERE id = ?', payload.sub, user.id);
 
-    if (!invites.isOpen()) invites.consume(inviteCode, user.id);
+    if (!(await invites.isOpen())) {
+      const code = await invites.consume(inviteCode, user.id);
+      // Mesma regra do cadastro por e-mail: o convite ja vem com amizade.
+      if (code?.created_by) await store.autoFriend(code.created_by, user.id);
+    }
   }
 
   // O Google ja confirmou o endereco: nao precisamos verificar de novo.
-  if (payload.email_verified) run('UPDATE users SET email_verified = 1 WHERE id = ?', user.id);
+  if (payload.email_verified) await run('UPDATE users SET email_verified = 1 WHERE id = ?', user.id);
 
-  if (payload.picture) run('UPDATE users SET avatar_url = ? WHERE id = ?', payload.picture, user.id);
+  if (payload.picture) await run('UPDATE users SET avatar_url = ? WHERE id = ?', payload.picture, user.id);
 
-  user = store.getUser(user.id);
+  user = await store.getUser(user.id);
   return { user: store.publicUser(user), token: signToken(user.id) };
 }
 

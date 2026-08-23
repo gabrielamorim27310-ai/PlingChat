@@ -3,7 +3,7 @@
 const express = require('express');
 const store = require('./store');
 const auth = require('./auth');
-const { all, get, run } = require('./db');
+const { get } = require('./db');
 const botModule = require('./bot');
 const google = require('./google');
 const invites = require('./invites');
@@ -31,7 +31,8 @@ router.post('/auth/register', rl.limit(rl.presets.register), wrap(async (req, re
 
   // O envio nao pode derrubar o cadastro: se falhar, o usuario reenvia depois.
   if (mailer.isEnabled()) {
-    mailer.sendVerification(store.getUser(result.user.id))
+    store.getUser(result.user.id)
+      .then((u) => mailer.sendVerification(u))
       .catch((err) => console.warn('verificacao de e-mail:', err.message));
   }
   res.json({ ...result, verificationSent: mailer.isEnabled() });
@@ -56,7 +57,7 @@ router.post('/auth/forgot', rl.limit(rl.presets.forgot), wrap(async (req, res) =
 
   if (!mailer.isEnabled()) throw new Error('A recuperacao de senha nao esta configurada neste servidor');
 
-  const user = store.getUserByEmail(String(req.body?.email || '').trim().toLowerCase());
+  const user = await store.getUserByEmail(String(req.body?.email || '').trim().toLowerCase());
 
   // Resposta identica exista ou nao a conta, para nao revelar quem tem cadastro.
   if (user?.email) {
@@ -66,16 +67,16 @@ router.post('/auth/forgot', rl.limit(rl.presets.forgot), wrap(async (req, res) =
 }));
 
 router.post('/auth/reset', rl.limit(rl.presets.reset), wrap(async (req, res) => {
-  const userId = mailer.consumeToken(req.body?.token, 'reset');
+  const userId = await mailer.consumeToken(req.body?.token, 'reset');
   const user = await auth.setPassword(userId, req.body?.password);
-  mailer.markVerified(userId); // so recebe o link quem controla a caixa
+  await mailer.markVerified(userId); // so recebe o link quem controla a caixa
   res.json({ user: store.publicUser(user), token: auth.signToken(userId) });
 }));
 
 router.post('/auth/verify', wrap(async (req, res) => {
-  const userId = mailer.consumeToken(req.body?.token, 'verify');
-  mailer.markVerified(userId);
-  res.json({ ok: true, user: store.publicUser(store.getUser(userId)) });
+  const userId = await mailer.consumeToken(req.body?.token, 'verify');
+  await mailer.markVerified(userId);
+  res.json({ ok: true, user: store.publicUser(await store.getUser(userId)) });
 }));
 
 router.post('/auth/resend-verification', auth.requireAuth, rl.limit(rl.presets.forgot), wrap(async (req, res) => {
@@ -87,41 +88,41 @@ router.post('/auth/resend-verification', auth.requireAuth, rl.limit(rl.presets.f
 
 /* ----------------------------------------------------------- convites */
 
-router.get('/invites', auth.requireAuth, (req, res) => {
-  res.json({ codes: invites.listCodes(req.user.id), max: invites.MAX_ACTIVE_PER_USER });
-});
+router.get('/invites', auth.requireAuth, wrap(async (req, res) => {
+  res.json({ codes: await invites.listCodes(req.user.id), max: invites.MAX_ACTIVE_PER_USER });
+}));
 
 router.post('/invites', auth.requireAuth, rl.limit(rl.presets.invite), wrap(async (req, res) => {
-  const code = invites.createCode(req.user.id, { note: req.body?.note || null, maxUses: req.body?.maxUses });
-  res.json({ code: code.code, codes: invites.listCodes(req.user.id) });
+  const code = await invites.createCode(req.user.id, { note: req.body?.note || null, maxUses: req.body?.maxUses });
+  res.json({ code: code.code, codes: await invites.listCodes(req.user.id) });
 }));
 
 router.delete('/invites/:code', auth.requireAuth, wrap(async (req, res) => {
-  invites.revokeCode(req.params.code, req.user.id);
-  res.json({ ok: true, codes: invites.listCodes(req.user.id) });
+  await invites.revokeCode(req.params.code, req.user.id);
+  res.json({ ok: true, codes: await invites.listCodes(req.user.id) });
 }));
 
 /** Configuracao publica que o front precisa conhecer antes do login. */
-router.get('/config', (req, res) => {
+router.get('/config', wrap(async (req, res) => {
   res.json({
     googleClientId: google.isEnabled() ? google.CLIENT_ID : null,
     turnstileSiteKey: turnstile.isEnabled() ? turnstile.SITE_KEY : null,
-    signupMode: invites.isOpen() ? 'open' : 'invite',
+    signupMode: (await invites.isOpen()) ? 'open' : 'invite',
     passwordResetEnabled: mailer.isEnabled(),
     vapidPublicKey: push.isEnabled() ? push.PUBLIC_KEY : null
   });
-});
+}));
 
 /** Inscricao/cancelamento de notificacoes push (Web Push). */
 router.post('/push/subscribe', auth.requireAuth, wrap(async (req, res) => {
   const sub = req.body?.subscription;
   if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) throw new Error('Inscricao invalida');
-  store.saveSubscription(req.user.id, sub);
+  await store.saveSubscription(req.user.id, sub);
   res.json({ ok: true });
 }));
 
 router.post('/push/unsubscribe', auth.requireAuth, wrap(async (req, res) => {
-  if (req.body?.endpoint) store.removeSubscription(req.body.endpoint);
+  if (req.body?.endpoint) await store.removeSubscription(req.body.endpoint);
   res.json({ ok: true });
 }));
 
@@ -130,8 +131,23 @@ router.get('/auth/me', auth.requireAuth, (req, res) => {
 });
 
 router.patch('/me', auth.requireAuth, wrap(async (req, res) => {
-  const { avatarColor, customStatus, bio, status } = req.body || {};
-  const user = store.updateProfile(req.user.id, { avatarColor, customStatus, bio, status });
+  const { avatarColor, avatarUrl, customStatus, bio, status } = req.body || {};
+
+  let nextAvatarUrl;
+  if (avatarUrl !== undefined) {
+    if (avatarUrl === null) {
+      nextAvatarUrl = null; // remove a foto, volta pro avatar de cor
+    } else if (typeof avatarUrl === 'string' && /^data:image\/(png|jpe?g|webp|gif);base64,/.test(avatarUrl)) {
+      if (avatarUrl.length > 900_000) throw new Error('Imagem muito grande. Escolha uma foto menor.');
+      nextAvatarUrl = avatarUrl;
+    } else {
+      throw new Error('Formato de imagem invalido');
+    }
+  }
+
+  const user = await store.updateProfile(req.user.id, {
+    avatarColor, avatarUrl: nextAvatarUrl, customStatus, bio, status
+  });
   res.json({ user: store.publicUser(user) });
 }));
 
@@ -139,21 +155,26 @@ router.patch('/me', auth.requireAuth, wrap(async (req, res) => {
 
 /** Tudo que o cliente precisa para montar a interface logo apos o login. */
 router.get('/bootstrap', auth.requireAuth, wrap(async (req, res) => {
-  const guilds = store.listGuildsOfUser(req.user.id);
+  const guilds = await store.listGuildsOfUser(req.user.id);
+  const fullGuilds = [];
+  for (const g of guilds) {
+    fullGuilds.push({
+      ...g,
+      channels: await store.listChannels(g.id),
+      members: await store.listMembers(g.id),
+      settings: await store.getSettings(g.id),
+      myRole: (await store.getMember(g.id, req.user.id))?.role ?? 'member'
+    });
+  }
+  const botUser = await store.getUser(botModule.BOT_ID);
   res.json({
     user: store.publicUser(req.user),
-    guilds: guilds.map((g) => ({
-      ...g,
-      channels: store.listChannels(g.id),
-      members: store.listMembers(g.id),
-      settings: store.getSettings(g.id),
-      myRole: store.getMember(g.id, req.user.id)?.role ?? 'member'
-    })),
-    dms: store.listDMs(req.user.id),
-    friends: store.listFriends(req.user.id),
-    unread: store.unreadCounts(req.user.id),
+    guilds: fullGuilds,
+    dms: await store.listDMs(req.user.id),
+    friends: await store.listFriends(req.user.id),
+    unread: await store.unreadCounts(req.user.id),
     bot: {
-      user: store.publicUser(store.getUser(botModule.BOT_ID)),
+      user: store.publicUser(botUser),
       commands: [...botModule.bot.commands.values()].map((c) => ({
         name: c.name,
         aliases: c.aliases || [],
@@ -171,13 +192,13 @@ router.get('/bootstrap', auth.requireAuth, wrap(async (req, res) => {
 router.post('/guilds', auth.requireAuth, rl.limit(rl.presets.guild), wrap(async (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (name.length < 2 || name.length > 40) throw new Error('O nome do servidor precisa ter de 2 a 40 caracteres');
-  const guild = store.createGuild({ name, ownerId: req.user.id });
+  const guild = await store.createGuild({ name, ownerId: req.user.id });
   res.json({
     guild: {
       ...store.guildPayload(guild),
-      channels: store.listChannels(guild.id),
-      members: store.listMembers(guild.id),
-      settings: store.getSettings(guild.id),
+      channels: await store.listChannels(guild.id),
+      members: await store.listMembers(guild.id),
+      settings: await store.getSettings(guild.id),
       myRole: 'owner'
     }
   });
@@ -185,25 +206,25 @@ router.post('/guilds', auth.requireAuth, rl.limit(rl.presets.guild), wrap(async 
 
 router.post('/guilds/join', auth.requireAuth, wrap(async (req, res) => {
   const code = String(req.body?.code || '').trim().toLowerCase();
-  const guild = store.getGuildByInvite(code);
+  const guild = await store.getGuildByInvite(code);
   if (!guild) throw new Error('Convite invalido ou expirado');
-  if (store.isBanned(guild.id, req.user.id)) throw new Error('Voce esta banido deste servidor');
-  if (store.getMember(guild.id, req.user.id)) throw new Error('Voce ja esta neste servidor');
-  const orgDomain = store.getSettings(guild.id).org_domain;
-  if (orgDomain && !store.domainMatches(guild.id, req.user.email)) {
+  if (await store.isBanned(guild.id, req.user.id)) throw new Error('Voce esta banido deste servidor');
+  if (await store.getMember(guild.id, req.user.id)) throw new Error('Voce ja esta neste servidor');
+  const orgDomain = (await store.getSettings(guild.id)).org_domain;
+  if (orgDomain && !(await store.domainMatches(guild.id, req.user.email))) {
     throw new Error(`Esse servidor é restrito a e-mails @${orgDomain}`);
   }
 
-  store.addMember(guild.id, req.user.id);
-  store.logAudit(guild.id, req.user.id, 'member_joined_invite');
+  await store.addMember(guild.id, req.user.id);
+  await store.logAudit(guild.id, req.user.id, 'member_joined_invite');
   req.app.locals.onMemberJoin?.(guild.id, req.user.id);
 
   res.json({
     guild: {
       ...store.guildPayload(guild),
-      channels: store.listChannels(guild.id),
-      members: store.listMembers(guild.id),
-      settings: store.getSettings(guild.id),
+      channels: await store.listChannels(guild.id),
+      members: await store.listMembers(guild.id),
+      settings: await store.getSettings(guild.id),
       myRole: 'member'
     }
   });
@@ -211,84 +232,87 @@ router.post('/guilds/join', auth.requireAuth, wrap(async (req, res) => {
 
 /** Convite direto: adiciona um amigo já existente ao servidor, sem precisar de código. */
 router.post('/guilds/:id/invite-friend', auth.requireAuth, wrap(async (req, res) => {
-  const guild = store.getGuild(req.params.id);
-  if (!guild || !store.getMember(guild.id, req.user.id)) throw new Error('Sem acesso a este servidor');
+  const guild = await store.getGuild(req.params.id);
+  if (!guild || !(await store.getMember(guild.id, req.user.id))) throw new Error('Sem acesso a este servidor');
 
   const friendId = String(req.body?.userId || '');
-  if (!store.areFriends(req.user.id, friendId)) throw new Error('Só dá pra convidar quem já é seu amigo');
-  if (store.isBanned(guild.id, friendId)) throw new Error('Essa pessoa está banida deste servidor');
-  if (store.getMember(guild.id, friendId)) throw new Error('Essa pessoa já está no servidor');
-  const orgDomain = store.getSettings(guild.id).org_domain;
-  if (orgDomain && !store.domainMatches(guild.id, store.getUser(friendId)?.email)) {
-    throw new Error(`Esse servidor é restrito a e-mails @${orgDomain}`);
+  if (!(await store.areFriends(req.user.id, friendId))) throw new Error('Só dá pra convidar quem já é seu amigo');
+  if (await store.isBanned(guild.id, friendId)) throw new Error('Essa pessoa está banida deste servidor');
+  if (await store.getMember(guild.id, friendId)) throw new Error('Essa pessoa já está no servidor');
+  const orgDomain = (await store.getSettings(guild.id)).org_domain;
+  if (orgDomain) {
+    const friendUser = await store.getUser(friendId);
+    if (!(await store.domainMatches(guild.id, friendUser?.email))) {
+      throw new Error(`Esse servidor é restrito a e-mails @${orgDomain}`);
+    }
   }
 
-  store.addMember(guild.id, friendId);
-  store.logAudit(guild.id, req.user.id, 'member_invited', friendId);
+  await store.addMember(guild.id, friendId);
+  await store.logAudit(guild.id, req.user.id, 'member_invited', friendId);
   req.app.locals.onMemberJoin?.(guild.id, friendId);
-  res.json({ ok: true, members: store.listMembers(guild.id) });
+  res.json({ ok: true, members: await store.listMembers(guild.id) });
 }));
 
 /** Auto-cadastro por e-mail corporativo verificado: sem convite, sem código. */
 router.post('/guilds/:id/join-by-domain', auth.requireAuth, wrap(async (req, res) => {
-  const guild = store.getGuild(req.params.id);
+  const guild = await store.getGuild(req.params.id);
   if (!guild) throw new Error('Servidor nao encontrado');
-  if (store.isBanned(guild.id, req.user.id)) throw new Error('Voce esta banido deste servidor');
-  if (store.getMember(guild.id, req.user.id)) throw new Error('Voce ja esta neste servidor');
-  if (!store.domainMatches(guild.id, req.user.email)) {
+  if (await store.isBanned(guild.id, req.user.id)) throw new Error('Voce esta banido deste servidor');
+  if (await store.getMember(guild.id, req.user.id)) throw new Error('Voce ja esta neste servidor');
+  if (!(await store.domainMatches(guild.id, req.user.email))) {
     throw new Error('Seu e-mail não pertence ao domínio dessa organização');
   }
 
-  store.addMember(guild.id, req.user.id);
-  store.logAudit(guild.id, req.user.id, 'member_joined_domain');
+  await store.addMember(guild.id, req.user.id);
+  await store.logAudit(guild.id, req.user.id, 'member_joined_domain');
   req.app.locals.onMemberJoin?.(guild.id, req.user.id);
 
   res.json({
     guild: {
       ...store.guildPayload(guild),
-      channels: store.listChannels(guild.id),
-      members: store.listMembers(guild.id),
-      settings: store.getSettings(guild.id),
+      channels: await store.listChannels(guild.id),
+      members: await store.listMembers(guild.id),
+      settings: await store.getSettings(guild.id),
       myRole: 'member'
     }
   });
 }));
 
 router.delete('/guilds/:id/leave', auth.requireAuth, wrap(async (req, res) => {
-  const guild = store.getGuild(req.params.id);
+  const guild = await store.getGuild(req.params.id);
   if (!guild) throw new Error('Servidor nao encontrado');
   if (guild.owner_id === req.user.id) throw new Error('O dono nao pode sair. Exclua o servidor.');
-  store.removeMember(guild.id, req.user.id);
+  await store.removeMember(guild.id, req.user.id);
   req.app.locals.onMemberLeave?.(guild.id, req.user.id, req.user.username);
   res.json({ ok: true });
 }));
 
 router.delete('/guilds/:id', auth.requireAuth, wrap(async (req, res) => {
-  const guild = store.getGuild(req.params.id);
+  const guild = await store.getGuild(req.params.id);
   if (!guild) throw new Error('Servidor nao encontrado');
   if (guild.owner_id !== req.user.id) throw new Error('Apenas o dono pode excluir o servidor');
-  store.deleteGuild(guild.id);
+  await store.deleteGuild(guild.id);
   req.app.locals.broadcastGuildDeleted?.(guild.id);
   res.json({ ok: true });
 }));
 
 router.get('/guilds/:id/members', auth.requireAuth, wrap(async (req, res) => {
-  if (!store.getMember(req.params.id, req.user.id)) throw new Error('Voce nao e membro deste servidor');
-  res.json({ members: store.listMembers(req.params.id) });
+  if (!(await store.getMember(req.params.id, req.user.id))) throw new Error('Voce nao e membro deste servidor');
+  res.json({ members: await store.listMembers(req.params.id) });
 }));
 
 router.patch('/guilds/:id/settings', auth.requireAuth, wrap(async (req, res) => {
-  if (store.rank(req.params.id, req.user.id) < store.ROLE_RANK.admin) throw new Error('Sem permissao');
-  const settings = store.updateSettings(req.params.id, req.body || {});
-  store.logAudit(req.params.id, req.user.id, 'settings_update', null, { keys: Object.keys(req.body || {}) });
+  if ((await store.rank(req.params.id, req.user.id)) < store.ROLE_RANK.admin) throw new Error('Sem permissao');
+  const settings = await store.updateSettings(req.params.id, req.body || {});
+  await store.logAudit(req.params.id, req.user.id, 'settings_update', null, { keys: Object.keys(req.body || {}) });
   req.app.locals.broadcastSettings?.(req.params.id, settings);
   res.json({ settings });
 }));
 
 /** Log de auditoria: quem fez o que, quando. So admin/dono ve. */
 router.get('/guilds/:id/audit-log', auth.requireAuth, wrap(async (req, res) => {
-  if (store.rank(req.params.id, req.user.id) < store.ROLE_RANK.admin) throw new Error('Sem permissao');
-  const entries = store.listAuditLog(req.params.id, {
+  if ((await store.rank(req.params.id, req.user.id)) < store.ROLE_RANK.admin) throw new Error('Sem permissao');
+  const entries = await store.listAuditLog(req.params.id, {
     before: req.query.before ? Number(req.query.before) : null,
     limit: Math.min(parseInt(req.query.limit, 10) || 50, 100)
   });
@@ -298,11 +322,11 @@ router.get('/guilds/:id/audit-log', auth.requireAuth, wrap(async (req, res) => {
 /* --------------------------------------------------------------- channels */
 
 router.post('/guilds/:id/channels', auth.requireAuth, wrap(async (req, res) => {
-  if (store.rank(req.params.id, req.user.id) < store.ROLE_RANK.admin) throw new Error('Sem permissao');
+  if ((await store.rank(req.params.id, req.user.id)) < store.ROLE_RANK.admin) throw new Error('Sem permissao');
   const name = String(req.body?.name || '').trim();
   const type = req.body?.type === 'voice' ? 'voice' : 'text';
   if (!name) throw new Error('Informe o nome do canal');
-  const channel = store.createChannel({
+  const channel = await store.createChannel({
     guildId: req.params.id,
     name: type === 'text' ? name.toLowerCase().replace(/\s+/g, '-').slice(0, 32) : name.slice(0, 32),
     type,
@@ -313,23 +337,23 @@ router.post('/guilds/:id/channels', auth.requireAuth, wrap(async (req, res) => {
 }));
 
 router.delete('/channels/:id', auth.requireAuth, wrap(async (req, res) => {
-  const channel = store.getChannel(req.params.id);
+  const channel = await store.getChannel(req.params.id);
   if (!channel || !channel.guild_id) throw new Error('Canal nao encontrado');
-  if (store.rank(channel.guild_id, req.user.id) < store.ROLE_RANK.admin) throw new Error('Sem permissao');
-  store.deleteChannel(channel.id);
-  store.logAudit(channel.guild_id, req.user.id, 'channel_deleted', null, { name: channel.name });
+  if ((await store.rank(channel.guild_id, req.user.id)) < store.ROLE_RANK.admin) throw new Error('Sem permissao');
+  await store.deleteChannel(channel.id);
+  await store.logAudit(channel.guild_id, req.user.id, 'channel_deleted', null, { name: channel.name });
   req.app.locals.broadcastChannels?.(channel.guild_id);
   res.json({ ok: true });
 }));
 
 router.get('/channels/:id/messages', auth.requireAuth, wrap(async (req, res) => {
-  const channel = store.getChannel(req.params.id);
-  if (!store.canAccess(req.user.id, channel)) throw new Error('Sem acesso a este canal');
-  const messages = store.listMessages(channel.id, {
+  const channel = await store.getChannel(req.params.id);
+  if (!(await store.canAccess(req.user.id, channel))) throw new Error('Sem acesso a este canal');
+  const messages = await store.listMessages(channel.id, {
     before: req.query.before || null,
     limit: Math.min(parseInt(req.query.limit, 10) || 50, 100)
   });
-  store.markRead(req.user.id, channel.id);
+  await store.markRead(req.user.id, channel.id);
   res.json({ messages });
 }));
 
@@ -337,10 +361,10 @@ router.get('/channels/:id/messages', auth.requireAuth, wrap(async (req, res) => 
 
 router.post('/dms', auth.requireAuth, rl.limit(rl.presets.dm), wrap(async (req, res) => {
   const otherId = String(req.body?.userId || '');
-  const other = store.getUser(otherId);
+  const other = await store.getUser(otherId);
   if (!other) throw new Error('Usuario nao encontrado');
-  if (store.isBlocked(otherId, req.user.id)) throw new Error('Nao e possivel abrir conversa com este usuario');
-  const channel = store.getOrCreateDM(req.user.id, otherId);
+  if (await store.isBlocked(otherId, req.user.id)) throw new Error('Nao e possivel abrir conversa com este usuario');
+  const channel = await store.getOrCreateDM(req.user.id, otherId);
   req.app.locals.registerDM?.(channel.id, [req.user.id, otherId]);
   res.json({
     channel: { ...store.channelPayload(channel), recipient: store.publicUser(other), lastMessageAt: Date.now() }
@@ -350,44 +374,45 @@ router.post('/dms', auth.requireAuth, rl.limit(rl.presets.dm), wrap(async (req, 
 /* --------------------------------------------------------------- friends */
 
 router.get('/friends', auth.requireAuth, wrap(async (req, res) => {
-  res.json(store.listFriends(req.user.id));
+  res.json(await store.listFriends(req.user.id));
 }));
 
 router.post('/friends/request', auth.requireAuth, rl.limit(rl.presets.friend), wrap(async (req, res) => {
   const handle = String(req.body?.handle || '').trim();
-  const target = store.getUserByHandle(handle) || get('SELECT * FROM users WHERE lower(username) = lower(?) AND is_bot = 0', handle);
+  const target = (await store.getUserByHandle(handle)) || (await get('SELECT * FROM users WHERE lower(username) = lower(?) AND is_bot = 0', handle));
   if (!target) throw new Error('Usuario nao encontrado. Use nome#0000.');
-  const friendship = store.sendFriendRequest(req.user.id, target.id);
+  const friendship = await store.sendFriendRequest(req.user.id, target.id);
   req.app.locals.notifyFriends?.([req.user.id, target.id]);
   res.json({ ok: true, status: friendship.status, user: store.publicUser(target) });
 }));
 
 router.post('/friends/:id/respond', auth.requireAuth, wrap(async (req, res) => {
-  const result = store.respondFriendRequest(req.params.id, req.user.id, !!req.body?.accept);
+  const result = await store.respondFriendRequest(req.params.id, req.user.id, !!req.body?.accept);
   req.app.locals.notifyFriends?.([result.requester_id, result.addressee_id]);
   res.json({ ok: true });
 }));
 
 router.delete('/friends/:userId', auth.requireAuth, wrap(async (req, res) => {
-  store.removeFriend(req.user.id, req.params.userId);
+  await store.removeFriend(req.user.id, req.params.userId);
   req.app.locals.notifyFriends?.([req.user.id, req.params.userId]);
   res.json({ ok: true });
 }));
 
 router.post('/friends/:userId/block', auth.requireAuth, wrap(async (req, res) => {
-  store.blockUser(req.user.id, req.params.userId);
+  await store.blockUser(req.user.id, req.params.userId);
   req.app.locals.notifyFriends?.([req.user.id, req.params.userId]);
   res.json({ ok: true });
 }));
 
 router.delete('/friends/:userId/block', auth.requireAuth, wrap(async (req, res) => {
-  store.unblockUser(req.user.id, req.params.userId);
+  await store.unblockUser(req.user.id, req.params.userId);
   req.app.locals.notifyFriends?.([req.user.id]);
   res.json({ ok: true });
 }));
 
 router.get('/users/search', auth.requireAuth, wrap(async (req, res) => {
-  res.json({ users: store.searchUsers(String(req.query.q || ''), 15).filter((u) => u.id !== req.user.id) });
+  const results = await store.searchUsers(String(req.query.q || ''), 15);
+  res.json({ users: results.filter((u) => u.id !== req.user.id) });
 }));
 
 /* ------------------------------------------------------------------- bot */
@@ -408,12 +433,13 @@ router.get('/bot/commands', auth.requireAuth, (req, res) => {
 /** Adiciona (ou remove) o bot de um servidor. */
 router.post('/guilds/:id/bot', auth.requireAuth, wrap(async (req, res) => {
   const guildId = req.params.id;
-  if (store.rank(guildId, req.user.id) < store.ROLE_RANK.admin) throw new Error('Apenas admins podem gerenciar o bot');
+  if ((await store.rank(guildId, req.user.id)) < store.ROLE_RANK.admin) throw new Error('Apenas admins podem gerenciar o bot');
   const enable = req.body?.enable !== false;
 
   if (enable) {
-    store.addMember(guildId, botModule.BOT_ID, 'mod');
-    const general = store.listChannels(guildId).find((c) => c.type === 'text');
+    await store.addMember(guildId, botModule.BOT_ID, 'mod');
+    const channels = await store.listChannels(guildId);
+    const general = channels.find((c) => c.type === 'text');
     if (general) {
       botModule.say(general.id, '', {
         color: botModule.COLORS.brand,
@@ -422,10 +448,10 @@ router.post('/guilds/:id/bot', auth.requireAuth, wrap(async (req, res) => {
       });
     }
   } else {
-    store.removeMember(guildId, botModule.BOT_ID);
+    await store.removeMember(guildId, botModule.BOT_ID);
   }
   req.app.locals.broadcastMembers?.(guildId);
-  res.json({ ok: true, enabled: enable, members: store.listMembers(guildId) });
+  res.json({ ok: true, enabled: enable, members: await store.listMembers(guildId) });
 }));
 
 module.exports = router;

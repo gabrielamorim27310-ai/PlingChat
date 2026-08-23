@@ -98,10 +98,10 @@ const commands = [
     description: 'Calcula a compatibilidade entre duas pessoas',
     usage: 'ship @a @b',
     guildOnly: true,
-    run(ctx) {
+    async run(ctx) {
       const [a, b] = ctx.argStr.split(/\s+/);
-      const ua = a ? store.findMemberByName(ctx.guild.id, a) : ctx.user;
-      const ub = b ? store.findMemberByName(ctx.guild.id, b) : null;
+      const ua = a ? await store.findMemberByName(ctx.guild.id, a) : ctx.user;
+      const ub = b ? await store.findMemberByName(ctx.guild.id, b) : null;
       if (!ua || !ub) return ctx.reply('Use: `!ship @pessoa1 @pessoa2`');
 
       const seed = [ua.id, ub.id].sort().join('');
@@ -124,16 +124,16 @@ const commands = [
     description: 'Casa com outro membro do servidor',
     usage: 'casar @usuario',
     guildOnly: true,
-    run(ctx) {
-      const target = store.findMemberByName(ctx.guild.id, ctx.argStr);
+    async run(ctx) {
+      const target = await store.findMemberByName(ctx.guild.id, ctx.argStr);
       if (!target || target.id === ctx.user.id) return ctx.reply('Escolha alguem para casar. 💍');
-      const mine = get('SELECT * FROM marriages WHERE guild_id = ? AND user_a = ?', ctx.guild.id, ctx.user.id);
+      const mine = await get('SELECT * FROM marriages WHERE guild_id = ? AND user_a = ?', ctx.guild.id, ctx.user.id);
       if (mine) return ctx.reply('Voce ja esta casado(a)! Use `!divorciar` primeiro.');
-      const theirs = get('SELECT * FROM marriages WHERE guild_id = ? AND user_a = ?', ctx.guild.id, target.id);
+      const theirs = await get('SELECT * FROM marriages WHERE guild_id = ? AND user_a = ?', ctx.guild.id, target.id);
       if (theirs) return ctx.reply(`**${target.username}** ja esta comprometido(a).`);
 
-      run('INSERT INTO marriages (guild_id, user_a, user_b, since) VALUES (?, ?, ?, ?)', ctx.guild.id, ctx.user.id, target.id, Date.now());
-      run('INSERT INTO marriages (guild_id, user_a, user_b, since) VALUES (?, ?, ?, ?)', ctx.guild.id, target.id, ctx.user.id, Date.now());
+      await run('INSERT INTO marriages (guild_id, user_a, user_b, since) VALUES (?, ?, ?, ?)', ctx.guild.id, ctx.user.id, target.id, Date.now());
+      await run('INSERT INTO marriages (guild_id, user_a, user_b, since) VALUES (?, ?, ?, ?)', ctx.guild.id, target.id, ctx.user.id, Date.now());
       return ctx.reply('', ctx.embed({
         color: ctx.COLORS.pink,
         title: '💒 Que comecem os votos!',
@@ -146,11 +146,11 @@ const commands = [
     aliases: ['divorce'],
     description: 'Termina seu casamento',
     guildOnly: true,
-    run(ctx) {
-      const mine = get('SELECT * FROM marriages WHERE guild_id = ? AND user_a = ?', ctx.guild.id, ctx.user.id);
+    async run(ctx) {
+      const mine = await get('SELECT * FROM marriages WHERE guild_id = ? AND user_a = ?', ctx.guild.id, ctx.user.id);
       if (!mine) return ctx.reply('Voce nao esta casado(a).');
-      run('DELETE FROM marriages WHERE guild_id = ? AND (user_a = ? OR user_a = ?)', ctx.guild.id, mine.user_a, mine.user_b);
-      const other = store.getUser(mine.user_b);
+      await run('DELETE FROM marriages WHERE guild_id = ? AND (user_a = ? OR user_a = ?)', ctx.guild.id, mine.user_a, mine.user_b);
+      const other = await store.getUser(mine.user_b);
       return ctx.reply('', ctx.embed({
         color: ctx.COLORS.err,
         description: `💔 **${ctx.user.username}** e **${other?.username ?? '???'}** se divorciaram.`
@@ -201,7 +201,7 @@ const commands = [
     description: 'Responde o quiz ativo no canal',
     usage: 'responder 2',
     guildOnly: true,
-    run(ctx) {
+    async run(ctx) {
       const game = ctx.bot.games.get(ctx.channel.id);
       if (!game || game.type !== 'trivia') return ctx.reply(`Nao ha quiz ativo. Inicie com \`${ctx.prefix}quiz\`.`);
       const answer = parseInt(ctx.args[0], 10) - 1;
@@ -209,7 +209,7 @@ const commands = [
 
       if (answer === game.question.answer) {
         ctx.bot.games.delete(ctx.channel.id);
-        run('UPDATE guild_members SET coins = coins + 200 WHERE guild_id = ? AND user_id = ?', ctx.guild.id, ctx.user.id);
+        await run('UPDATE guild_members SET coins = coins + 200 WHERE guild_id = ? AND user_id = ?', ctx.guild.id, ctx.user.id);
         return ctx.reply('', ctx.embed({
           color: ctx.COLORS.ok,
           title: '✅ Resposta correta!',
@@ -225,8 +225,8 @@ const commands = [
     description: 'Abraca alguem',
     usage: 'abracar @usuario',
     guildOnly: true,
-    run(ctx) {
-      const target = store.findMemberByName(ctx.guild.id, ctx.argStr);
+    async run(ctx) {
+      const target = await store.findMemberByName(ctx.guild.id, ctx.argStr);
       if (!target) return ctx.reply('Quem voce quer abracar?');
       return ctx.reply('', ctx.embed({
         color: ctx.COLORS.pink,
@@ -240,8 +240,8 @@ const commands = [
     description: 'Da um tapa (de brincadeira) em alguem',
     usage: 'tapa @usuario',
     guildOnly: true,
-    run(ctx) {
-      const target = store.findMemberByName(ctx.guild.id, ctx.argStr);
+    async run(ctx) {
+      const target = await store.findMemberByName(ctx.guild.id, ctx.argStr);
       if (!target) return ctx.reply('Em quem?');
       return ctx.reply('', ctx.embed({
         color: ctx.COLORS.warn,
@@ -271,8 +271,8 @@ const commands = [
     description: 'Mede o nivel de gado de alguem',
     usage: 'gado [@usuario]',
     guildOnly: true,
-    run(ctx) {
-      const target = ctx.argStr ? store.findMemberByName(ctx.guild.id, ctx.argStr) : ctx.user;
+    async run(ctx) {
+      const target = ctx.argStr ? await store.findMemberByName(ctx.guild.id, ctx.argStr) : ctx.user;
       if (!target) return ctx.reply('Usuario nao encontrado.');
       let hash = 0;
       for (const ch of target.id + 'gado') hash = (hash * 17 + ch.charCodeAt(0)) % 101;

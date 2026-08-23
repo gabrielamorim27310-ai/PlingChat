@@ -43,23 +43,23 @@ async function send({ to, subject, html }) {
 
 /* ------------------------------------------------------------- tokens --- */
 
-function createToken(userId, kind) {
+async function createToken(userId, kind) {
   // Invalida tokens anteriores do mesmo tipo: só o último vale.
-  run('DELETE FROM email_tokens WHERE user_id = ? AND kind = ?', userId, kind);
+  await run('DELETE FROM email_tokens WHERE user_id = ? AND kind = ?', userId, kind);
 
   const token = crypto.randomBytes(32).toString('base64url');
-  run('INSERT INTO email_tokens (token, user_id, kind, expires_at) VALUES (?, ?, ?, ?)',
+  await run('INSERT INTO email_tokens (token, user_id, kind, expires_at) VALUES (?, ?, ?, ?)',
     token, userId, kind, Date.now() + TTL[kind]);
   return token;
 }
 
-function consumeToken(token, kind) {
-  const row = get('SELECT * FROM email_tokens WHERE token = ? AND kind = ?', String(token || ''), kind);
+async function consumeToken(token, kind) {
+  const row = await get('SELECT * FROM email_tokens WHERE token = ? AND kind = ?', String(token || ''), kind);
   if (!row) throw new Error('Link inválido');
   if (row.used_at) throw new Error('Este link já foi usado');
   if (row.expires_at < Date.now()) throw new Error('Este link expirou. Peça outro.');
 
-  run('UPDATE email_tokens SET used_at = ? WHERE token = ?', Date.now(), token);
+  await run('UPDATE email_tokens SET used_at = ? WHERE token = ?', Date.now(), token);
   return row.user_id;
 }
 
@@ -78,7 +78,7 @@ const layout = (title, body, cta) => `
 
 async function sendVerification(user) {
   if (!isEnabled() || !user.email) return false;
-  const token = createToken(user.id, 'verify');
+  const token = await createToken(user.id, 'verify');
   await send({
     to: user.email,
     subject: 'Confirme seu e-mail no PlingChat',
@@ -93,7 +93,7 @@ async function sendVerification(user) {
 
 async function sendPasswordReset(user) {
   if (!isEnabled() || !user.email) return false;
-  const token = createToken(user.id, 'reset');
+  const token = await createToken(user.id, 'reset');
   await send({
     to: user.email,
     subject: 'Redefinir sua senha do PlingChat',

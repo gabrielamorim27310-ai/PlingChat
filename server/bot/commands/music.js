@@ -68,7 +68,7 @@ const commands = [
     description: 'Toca um audio no canal de voz (URL direta de audio ou radio)',
     usage: 'tocar https://exemplo.com/musica.mp3',
     guildOnly: true,
-    run(ctx) {
+    async run(ctx) {
       const url = ctx.argStr.trim();
       if (!AUDIO_URL.test(url)) {
         return ctx.reply('', ctx.embed({
@@ -84,7 +84,8 @@ const commands = [
       }
 
       const s = state(ctx);
-      const voice = store.listChannels(ctx.guild.id).find((c) => c.type === 'voice');
+      const channels = await store.listChannels(ctx.guild.id);
+      const voice = channels.find((c) => c.type === 'voice');
       s.voiceChannelId = voice?.id ?? null;
 
       const track = { url, title: titleFromUrl(url), requestedBy: ctx.user.username, addedAt: Date.now() };

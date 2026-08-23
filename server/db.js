@@ -1,18 +1,57 @@
 'use strict';
 
-const path = require('node:path');
-const fs = require('node:fs');
-const { DatabaseSync } = require('node:sqlite');
+/**
+ * Banco: Postgres (Supabase), assincrono. Era SQLite local (node:sqlite),
+ * mas sem disco persistente no Render free o arquivo zerava a cada deploy
+ * ou reinicio por inatividade — perda de dado real, aconteceu de verdade.
+ * Postgres externo resolve isso: o processo do servidor pode nascer e
+ * morrer a vontade, o banco continua vivo em outro lugar.
+ *
+ * all/get/run aceitam SQL com `?` (estilo antigo, SQLite) e convertem pra
+ * `$1, $2...` (estilo Postgres) por baixo — assim quase nenhuma query
+ * espalhada pelo resto do codigo precisou ser reescrita.
+ */
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-fs.mkdirSync(DATA_DIR, { recursive: true });
+const { Pool, types } = require('pg');
 
-const db = new DatabaseSync(path.join(DATA_DIR, 'nexus.db'));
+// BIGINT (oid 20) volta do driver como string por padrao, pra nao perder
+// precisao acima de 2^53. Todo BIGINT daqui e timestamp em milissegundos —
+// bem dentro do intervalo seguro — entao converte pra Number direto, senao
+// vira bug silencioso em toda comparacao/aritmetica de data no resto do app.
+types.setTypeParser(20, (val) => parseInt(val, 10));
 
-db.exec('PRAGMA journal_mode = WAL');
-db.exec('PRAGMA foreign_keys = ON');
+const CONNECTION_STRING = process.env.DATABASE_URL;
+if (!CONNECTION_STRING) throw new Error('DATABASE_URL nao definida — configure a connection string do Postgres');
 
-db.exec(`
+const pool = new Pool({
+  connectionString: CONNECTION_STRING,
+  ssl: { rejectUnauthorized: false }
+});
+
+pool.on('error', (err) => console.error('pg pool: erro inesperado', err.message));
+
+/** Troca `?` posicional (estilo SQLite) por `$1 $2 ...` (estilo Postgres). */
+function toPgSql(sql) {
+  let i = 0;
+  return sql.replace(/\?/g, () => `$${++i}`);
+}
+
+async function query(sql, params) {
+  return pool.query(toPgSql(sql), params);
+}
+
+const all = async (sql, ...params) => (await query(sql, params)).rows;
+const get = async (sql, ...params) => (await query(sql, params)).rows[0];
+const run = async (sql, ...params) => query(sql, params);
+
+/** Gera um id curto ordenavel por tempo, no estilo snowflake. */
+let seq = 0;
+function newId() {
+  seq = (seq + 1) % 4096;
+  return Date.now().toString(36) + seq.toString(36).padStart(3, '0') + Math.random().toString(36).slice(2, 6);
+}
+
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id            TEXT PRIMARY KEY,
   username      TEXT NOT NULL,
@@ -25,7 +64,7 @@ CREATE TABLE IF NOT EXISTS users (
   custom_status TEXT,
   bio           TEXT,
   is_bot        INTEGER NOT NULL DEFAULT 0,
-  created_at    INTEGER NOT NULL,
+  created_at    BIGINT NOT NULL,
   UNIQUE (username, tag)
 );
 
@@ -36,7 +75,7 @@ CREATE TABLE IF NOT EXISTS guilds (
   icon_url    TEXT,
   owner_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   invite_code TEXT NOT NULL UNIQUE,
-  created_at  INTEGER NOT NULL
+  created_at  BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS guild_members (
@@ -44,16 +83,16 @@ CREATE TABLE IF NOT EXISTS guild_members (
   user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   nickname  TEXT,
   role      TEXT NOT NULL DEFAULT 'member',
-  joined_at INTEGER NOT NULL,
+  joined_at BIGINT NOT NULL,
   xp        INTEGER NOT NULL DEFAULT 0,
   level     INTEGER NOT NULL DEFAULT 0,
   coins     INTEGER NOT NULL DEFAULT 0,
   bank      INTEGER NOT NULL DEFAULT 0,
-  last_daily   INTEGER NOT NULL DEFAULT 0,
-  last_work    INTEGER NOT NULL DEFAULT 0,
-  last_crime   INTEGER NOT NULL DEFAULT 0,
-  last_message INTEGER NOT NULL DEFAULT 0,
-  muted_until  INTEGER NOT NULL DEFAULT 0,
+  last_daily   BIGINT NOT NULL DEFAULT 0,
+  last_work    BIGINT NOT NULL DEFAULT 0,
+  last_crime   BIGINT NOT NULL DEFAULT 0,
+  last_message BIGINT NOT NULL DEFAULT 0,
+  muted_until  BIGINT NOT NULL DEFAULT 0,
   PRIMARY KEY (guild_id, user_id)
 );
 
@@ -62,7 +101,7 @@ CREATE TABLE IF NOT EXISTS guild_bans (
   user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   reason     TEXT,
   banned_by  TEXT,
-  created_at INTEGER NOT NULL,
+  created_at BIGINT NOT NULL,
   PRIMARY KEY (guild_id, user_id)
 );
 
@@ -73,7 +112,7 @@ CREATE TABLE IF NOT EXISTS channels (
   type       TEXT NOT NULL DEFAULT 'text',
   topic      TEXT,
   position   INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL
+  created_at BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS dm_participants (
@@ -89,8 +128,8 @@ CREATE TABLE IF NOT EXISTS messages (
   content     TEXT NOT NULL DEFAULT '',
   embed       TEXT,
   reply_to    TEXT,
-  created_at  INTEGER NOT NULL,
-  edited_at   INTEGER
+  created_at  BIGINT NOT NULL,
+  edited_at   BIGINT
 );
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id, created_at);
 
@@ -106,14 +145,14 @@ CREATE TABLE IF NOT EXISTS friendships (
   requester_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   addressee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   status       TEXT NOT NULL DEFAULT 'pending',
-  created_at   INTEGER NOT NULL,
+  created_at   BIGINT NOT NULL,
   UNIQUE (requester_id, addressee_id)
 );
 
 CREATE TABLE IF NOT EXISTS read_state (
   user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
-  last_read  INTEGER NOT NULL DEFAULT 0,
+  last_read  BIGINT NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, channel_id)
 );
 
@@ -139,7 +178,7 @@ CREATE TABLE IF NOT EXISTS warns (
   user_id    TEXT NOT NULL,
   moderator  TEXT NOT NULL,
   reason     TEXT,
-  created_at INTEGER NOT NULL
+  created_at BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS custom_commands (
@@ -162,7 +201,7 @@ CREATE TABLE IF NOT EXISTS reminders (
   user_id    TEXT NOT NULL,
   channel_id TEXT NOT NULL,
   text       TEXT NOT NULL,
-  remind_at  INTEGER NOT NULL
+  remind_at  BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS polls (
@@ -180,14 +219,14 @@ CREATE TABLE IF NOT EXISTS signup_codes (
   note       TEXT,
   max_uses   INTEGER NOT NULL DEFAULT 1,
   uses       INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL,
+  created_at BIGINT NOT NULL,
   revoked    INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS signup_code_uses (
   code    TEXT NOT NULL,
   user_id TEXT NOT NULL,
-  used_at INTEGER NOT NULL,
+  used_at BIGINT NOT NULL,
   PRIMARY KEY (code, user_id)
 );
 
@@ -195,8 +234,8 @@ CREATE TABLE IF NOT EXISTS email_tokens (
   token      TEXT PRIMARY KEY,
   user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   kind       TEXT NOT NULL,
-  expires_at INTEGER NOT NULL,
-  used_at    INTEGER
+  expires_at BIGINT NOT NULL,
+  used_at    BIGINT
 );
 CREATE INDEX IF NOT EXISTS idx_email_tokens_user ON email_tokens(user_id, kind);
 
@@ -204,7 +243,7 @@ CREATE TABLE IF NOT EXISTS marriages (
   guild_id  TEXT NOT NULL,
   user_a    TEXT NOT NULL,
   user_b    TEXT NOT NULL,
-  since     INTEGER NOT NULL,
+  since     BIGINT NOT NULL,
   PRIMARY KEY (guild_id, user_a)
 );
 
@@ -213,7 +252,7 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   p256dh     TEXT NOT NULL,
   auth       TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
 
@@ -224,33 +263,17 @@ CREATE TABLE IF NOT EXISTS audit_log (
   action     TEXT NOT NULL,
   target_id  TEXT,
   meta       TEXT,
-  created_at INTEGER NOT NULL
+  created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_audit_log_guild ON audit_log(guild_id, created_at);
-`);
+`;
 
-/**
- * Migracoes aditivas: adiciona colunas que nao existiam em bancos antigos.
- * Rodar isso sempre e barato e mantem bases criadas antes da mudanca.
- */
-function ensureColumn(table, column, definition) {
-  const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
-  if (!columns.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+/** Roda o schema inteiro + migracoes aditivas. Chamado uma vez, na subida. */
+async function migrate() {
+  await pool.query(SCHEMA);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified INTEGER NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS org_domain TEXT`);
 }
 
-ensureColumn('users', 'google_sub', 'TEXT');
-ensureColumn('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 0');
-ensureColumn('guild_settings', 'org_domain', 'TEXT');
-
-/** Gera um id curto ordenavel por tempo, no estilo snowflake. */
-let seq = 0;
-function newId() {
-  seq = (seq + 1) % 4096;
-  return Date.now().toString(36) + seq.toString(36).padStart(3, '0') + Math.random().toString(36).slice(2, 6);
-}
-
-const all = (sql, ...params) => db.prepare(sql).all(...params);
-const get = (sql, ...params) => db.prepare(sql).get(...params);
-const run = (sql, ...params) => db.prepare(sql).run(...params);
-
-module.exports = { db, newId, all, get, run, DATA_DIR };
+module.exports = { pool, newId, all, get, run, migrate };

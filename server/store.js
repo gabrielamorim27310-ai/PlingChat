@@ -27,24 +27,24 @@ function publicUser(u) {
     isBot: !!u.is_bot,
     emailVerified: !!u.email_verified,
     hasEmail: !!u.email,
-    createdAt: u.created_at
+    createdAt: Number(u.created_at)
   };
 }
 
-function freeTag(username) {
+async function freeTag(username) {
   for (let i = 0; i < 200; i++) {
     const tag = String(Math.floor(1000 + Math.random() * 9000));
-    if (!get('SELECT 1 FROM users WHERE username = ? AND tag = ?', username, tag)) return tag;
+    if (!(await get('SELECT 1 FROM users WHERE username = ? AND tag = ?', username, tag))) return tag;
   }
   throw new Error('Sem tags disponiveis para este nome');
 }
 
-function createUser({ username, email, passwordHash, isBot = false, id = null }) {
+async function createUser({ username, email, passwordHash, isBot = false, id = null }) {
   const uid = id || newId();
-  run(
+  await run(
     `INSERT INTO users (id, username, tag, email, password_hash, avatar_color, status, is_bot, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    uid, username, freeTag(username), email || null, passwordHash || null,
+    uid, username, await freeTag(username), email || null, passwordHash || null,
     pickColor(), isBot ? 'online' : 'offline', isBot ? 1 : 0, now()
   );
   return getUser(uid);
@@ -60,17 +60,17 @@ function getUserByHandle(handle) {
   return get('SELECT * FROM users WHERE lower(username) = lower(?) AND tag = ?', m[1], m[2]);
 }
 
-function searchUsers(query, limit = 20) {
+async function searchUsers(query, limit = 20) {
   const q = `%${String(query).trim()}%`;
-  return all('SELECT * FROM users WHERE username LIKE ? AND is_bot = 0 LIMIT ?', q, limit).map(publicUser);
+  return (await all('SELECT * FROM users WHERE username LIKE ? AND is_bot = 0 LIMIT ?', q, limit)).map(publicUser);
 }
 
 const setStatus = (userId, status) => run('UPDATE users SET status = ? WHERE id = ?', status, userId);
 
-function updateProfile(userId, patch) {
-  const map = { avatarColor: 'avatar_color', customStatus: 'custom_status', bio: 'bio', status: 'status' };
+async function updateProfile(userId, patch) {
+  const map = { avatarColor: 'avatar_color', avatarUrl: 'avatar_url', customStatus: 'custom_status', bio: 'bio', status: 'status' };
   for (const [key, col] of Object.entries(map)) {
-    if (patch[key] !== undefined) run(`UPDATE users SET ${col} = ? WHERE id = ?`, patch[key], userId);
+    if (patch[key] !== undefined) await run(`UPDATE users SET ${col} = ? WHERE id = ?`, patch[key], userId);
   }
   return getUser(userId);
 }
@@ -86,31 +86,31 @@ function guildPayload(g) {
     iconUrl: g.icon_url || null,
     ownerId: g.owner_id,
     inviteCode: g.invite_code,
-    createdAt: g.created_at
+    createdAt: Number(g.created_at)
   };
 }
 
-function freeInviteCode() {
+async function freeInviteCode() {
   const chars = 'abcdefghijkmnpqrstuvwxyz23456789';
   for (;;) {
     let code = '';
     for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
-    if (!get('SELECT 1 FROM guilds WHERE invite_code = ?', code)) return code;
+    if (!(await get('SELECT 1 FROM guilds WHERE invite_code = ?', code))) return code;
   }
 }
 
-function createGuild({ name, ownerId }) {
+async function createGuild({ name, ownerId }) {
   const id = newId();
-  run(
+  await run(
     'INSERT INTO guilds (id, name, icon_color, owner_id, invite_code, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    id, name, pickColor(), ownerId, freeInviteCode(), now()
+    id, name, pickColor(), ownerId, await freeInviteCode(), now()
   );
-  run('INSERT INTO guild_settings (guild_id) VALUES (?)', id);
-  addMember(id, ownerId, 'owner');
-  addMember(id, BOT_USER_ID, 'mod');
-  createChannel({ guildId: id, name: 'geral', type: 'text', topic: 'Canal principal do servidor' });
-  createChannel({ guildId: id, name: 'bot-comandos', type: 'text', topic: 'Use os comandos do bot aqui' });
-  createChannel({ guildId: id, name: 'Sala de Voz', type: 'voice' });
+  await run('INSERT INTO guild_settings (guild_id) VALUES (?)', id);
+  await addMember(id, ownerId, 'owner');
+  await addMember(id, BOT_USER_ID, 'mod');
+  await createChannel({ guildId: id, name: 'geral', type: 'text', topic: 'Canal principal do servidor' });
+  await createChannel({ guildId: id, name: 'bot-comandos', type: 'text', topic: 'Use os comandos do bot aqui' });
+  await createChannel({ guildId: id, name: 'Sala de Voz', type: 'voice' });
   return getGuild(id);
 }
 
@@ -118,15 +118,16 @@ const getGuild = (id) => get('SELECT * FROM guilds WHERE id = ?', id);
 const getGuildByInvite = (code) => get('SELECT * FROM guilds WHERE invite_code = ?', String(code).trim().toLowerCase());
 const deleteGuild = (id) => run('DELETE FROM guilds WHERE id = ?', id);
 
-const listGuildsOfUser = (userId) =>
-  all(
+const listGuildsOfUser = async (userId) =>
+  (await all(
     `SELECT g.* FROM guilds g JOIN guild_members m ON m.guild_id = g.id
      WHERE m.user_id = ? ORDER BY m.joined_at`, userId
-  ).map(guildPayload);
+  )).map(guildPayload);
 
-function addMember(guildId, userId, role = 'member') {
-  run(
-    'INSERT OR IGNORE INTO guild_members (guild_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)',
+async function addMember(guildId, userId, role = 'member') {
+  await run(
+    `INSERT INTO guild_members (guild_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (guild_id, user_id) DO NOTHING`,
     guildId, userId, role, now()
   );
   return getMember(guildId, userId);
@@ -138,8 +139,8 @@ const getMember = (guildId, userId) =>
 const removeMember = (guildId, userId) =>
   run('DELETE FROM guild_members WHERE guild_id = ? AND user_id = ?', guildId, userId);
 
-const memberCount = (guildId) =>
-  get('SELECT COUNT(*) AS n FROM guild_members WHERE guild_id = ?', guildId)?.n ?? 0;
+const memberCount = async (guildId) =>
+  Number((await get('SELECT COUNT(*) AS n FROM guild_members WHERE guild_id = ?', guildId))?.n ?? 0);
 
 function memberPayload(row) {
   return {
@@ -147,30 +148,30 @@ function memberPayload(row) {
     nickname: row.nickname || null,
     displayName: row.nickname || row.username,
     role: row.role,
-    joinedAt: row.joined_at,
+    joinedAt: Number(row.joined_at),
     level: row.level,
     xp: row.xp,
     coins: row.coins,
     bank: row.bank,
-    mutedUntil: row.muted_until
+    mutedUntil: Number(row.muted_until)
   };
 }
 
-const listMembers = (guildId) =>
-  all(
+const listMembers = async (guildId) =>
+  (await all(
     `SELECT u.*, m.nickname, m.role, m.joined_at, m.level, m.xp, m.coins, m.bank, m.muted_until
      FROM guild_members m JOIN users u ON u.id = m.user_id
      WHERE m.guild_id = ?
      ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'mod' THEN 2 ELSE 3 END, u.username`,
     guildId
-  ).map(memberPayload);
+  )).map(memberPayload);
 
-function findMemberByName(guildId, query) {
+async function findMemberByName(guildId, query) {
   const q = String(query || '').trim().replace(/^@/, '');
   if (!q) return null;
-  const byHandle = getUserByHandle(q);
-  if (byHandle && getMember(guildId, byHandle.id)) return getMember(guildId, byHandle.id) && byHandle;
-  const row = get(
+  const byHandle = await getUserByHandle(q);
+  if (byHandle && (await getMember(guildId, byHandle.id))) return byHandle;
+  const row = await get(
     `SELECT u.* FROM guild_members m JOIN users u ON u.id = m.user_id
      WHERE m.guild_id = ? AND (lower(u.username) = lower(?) OR lower(m.nickname) = lower(?) OR u.id = ?)`,
     guildId, q, q, q
@@ -184,31 +185,35 @@ function findMemberByName(guildId, query) {
 }
 
 const ROLE_RANK = { owner: 3, admin: 2, mod: 1, member: 0 };
-function rank(guildId, userId) {
-  const m = getMember(guildId, userId);
+async function rank(guildId, userId) {
+  const m = await getMember(guildId, userId);
   return m ? (ROLE_RANK[m.role] ?? 0) : -1;
 }
 
 const setRole = (guildId, userId, role) =>
   run('UPDATE guild_members SET role = ? WHERE guild_id = ? AND user_id = ?', role, guildId, userId);
 
-const isBanned = (guildId, userId) =>
-  !!get('SELECT 1 FROM guild_bans WHERE guild_id = ? AND user_id = ?', guildId, userId);
+const isBanned = async (guildId, userId) =>
+  !!(await get('SELECT 1 FROM guild_bans WHERE guild_id = ? AND user_id = ?', guildId, userId));
 
-const banMember = (guildId, userId, reason, by) => {
-  run(
-    'INSERT OR REPLACE INTO guild_bans (guild_id, user_id, reason, banned_by, created_at) VALUES (?, ?, ?, ?, ?)',
+const banMember = async (guildId, userId, reason, by) => {
+  await run(
+    `INSERT INTO guild_bans (guild_id, user_id, reason, banned_by, created_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (guild_id, user_id) DO UPDATE SET reason = excluded.reason, banned_by = excluded.banned_by, created_at = excluded.created_at`,
     guildId, userId, reason || null, by || null, now()
   );
-  removeMember(guildId, userId);
+  await removeMember(guildId, userId);
 };
 
 const unbanMember = (guildId, userId) =>
   run('DELETE FROM guild_bans WHERE guild_id = ? AND user_id = ?', guildId, userId);
 
-const listBans = (guildId) =>
-  all('SELECT * FROM guild_bans WHERE guild_id = ?', guildId)
-    .map((b) => ({ user: publicUser(getUser(b.user_id)), reason: b.reason, createdAt: b.created_at }));
+async function listBans(guildId) {
+  const rows = await all('SELECT * FROM guild_bans WHERE guild_id = ?', guildId);
+  const out = [];
+  for (const b of rows) out.push({ user: publicUser(await getUser(b.user_id)), reason: b.reason, createdAt: Number(b.created_at) });
+  return out;
+}
 
 /* --------------------------------------------------------------- channels */
 
@@ -221,14 +226,14 @@ function channelPayload(c) {
     type: c.type,
     topic: c.topic || null,
     position: c.position,
-    createdAt: c.created_at
+    createdAt: Number(c.created_at)
   };
 }
 
-function createChannel({ guildId, name, type = 'text', topic = null }) {
+async function createChannel({ guildId, name, type = 'text', topic = null }) {
   const id = newId();
-  const pos = get('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM channels WHERE guild_id = ?', guildId)?.p ?? 0;
-  run(
+  const pos = Number((await get('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM channels WHERE guild_id = ?', guildId))?.p ?? 0);
+  await run(
     'INSERT INTO channels (id, guild_id, name, type, topic, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     id, guildId || null, name, type, topic, pos, now()
   );
@@ -236,20 +241,20 @@ function createChannel({ guildId, name, type = 'text', topic = null }) {
 }
 
 const getChannel = (id) => get('SELECT * FROM channels WHERE id = ?', id);
-const listChannels = (guildId) =>
-  all("SELECT * FROM channels WHERE guild_id = ? ORDER BY (type = 'voice'), position", guildId).map(channelPayload);
+const listChannels = async (guildId) =>
+  (await all("SELECT * FROM channels WHERE guild_id = ? ORDER BY (type = 'voice'), position", guildId)).map(channelPayload);
 const deleteChannel = (id) => run('DELETE FROM channels WHERE id = ?', id);
 const renameChannel = (id, name) => run('UPDATE channels SET name = ? WHERE id = ?', name, id);
 
-function findChannelByName(guildId, name) {
+async function findChannelByName(guildId, name) {
   const q = String(name || '').trim().replace(/^#/, '');
-  return get('SELECT * FROM channels WHERE guild_id = ? AND lower(name) = lower(?)', guildId, q)
+  return (await get('SELECT * FROM channels WHERE guild_id = ? AND lower(name) = lower(?)', guildId, q))
       || get('SELECT * FROM channels WHERE id = ?', q);
 }
 
 /** Canal de DM entre dois usuarios; criado sob demanda. */
-function getOrCreateDM(userA, userB) {
-  const found = get(
+async function getOrCreateDM(userA, userB) {
+  const found = await get(
     `SELECT c.* FROM channels c
      JOIN dm_participants p1 ON p1.channel_id = c.id AND p1.user_id = ?
      JOIN dm_participants p2 ON p2.channel_id = c.id AND p2.user_id = ?
@@ -257,107 +262,113 @@ function getOrCreateDM(userA, userB) {
     userA, userB
   );
   if (found) return found;
-  const ch = createChannel({ guildId: null, name: 'dm', type: 'dm' });
-  run('INSERT INTO dm_participants (channel_id, user_id) VALUES (?, ?)', ch.id, userA);
-  run('INSERT INTO dm_participants (channel_id, user_id) VALUES (?, ?)', ch.id, userB);
+  const ch = await createChannel({ guildId: null, name: 'dm', type: 'dm' });
+  await run('INSERT INTO dm_participants (channel_id, user_id) VALUES (?, ?)', ch.id, userA);
+  await run('INSERT INTO dm_participants (channel_id, user_id) VALUES (?, ?)', ch.id, userB);
   return ch;
 }
 
-const dmParticipants = (channelId) =>
-  all('SELECT user_id FROM dm_participants WHERE channel_id = ?', channelId).map((r) => r.user_id);
+const dmParticipants = async (channelId) =>
+  (await all('SELECT user_id FROM dm_participants WHERE channel_id = ?', channelId)).map((r) => r.user_id);
 
-function listDMs(userId) {
-  const rows = all(
+async function listDMs(userId) {
+  const rows = await all(
     `SELECT c.* FROM channels c
      JOIN dm_participants p ON p.channel_id = c.id
      WHERE p.user_id = ? AND c.type = 'dm'`,
     userId
   );
-  return rows.map((c) => {
-    const otherId = dmParticipants(c.id).find((id) => id !== userId);
-    const last = get('SELECT created_at FROM messages WHERE channel_id = ? ORDER BY created_at DESC LIMIT 1', c.id);
-    return {
+  const out = [];
+  for (const c of rows) {
+    const participants = await dmParticipants(c.id);
+    const otherId = participants.find((id) => id !== userId);
+    const last = await get('SELECT created_at FROM messages WHERE channel_id = ? ORDER BY created_at DESC LIMIT 1', c.id);
+    out.push({
       ...channelPayload(c),
-      recipient: publicUser(getUser(otherId)),
-      lastMessageAt: last ? last.created_at : c.created_at
-    };
-  }).sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+      recipient: publicUser(await getUser(otherId)),
+      lastMessageAt: last ? Number(last.created_at) : Number(c.created_at)
+    });
+  }
+  return out.sort((a, b) => b.lastMessageAt - a.lastMessageAt);
 }
 
 /** O usuario pode ler/escrever neste canal? */
-function canAccess(userId, channel) {
+async function canAccess(userId, channel) {
   if (!channel) return false;
-  if (channel.type === 'dm') return dmParticipants(channel.id).includes(userId);
-  return !!getMember(channel.guild_id, userId);
+  if (channel.type === 'dm') return (await dmParticipants(channel.id)).includes(userId);
+  return !!(await getMember(channel.guild_id, userId));
 }
 
 /* --------------------------------------------------------------- messages */
 
-function messagePayload(m) {
+async function messagePayload(m) {
   if (!m) return null;
-  const reactions = all('SELECT emoji, user_id FROM reactions WHERE message_id = ?', m.id);
+  const reactions = await all('SELECT emoji, user_id FROM reactions WHERE message_id = ?', m.id);
   const grouped = {};
   for (const r of reactions) (grouped[r.emoji] ||= []).push(r.user_id);
 
   let replyTo = null;
   if (m.reply_to) {
-    const parent = get('SELECT * FROM messages WHERE id = ?', m.reply_to);
+    const parent = await get('SELECT * FROM messages WHERE id = ?', m.reply_to);
     if (parent) {
-      replyTo = { id: parent.id, content: parent.content, author: publicUser(getUser(parent.author_id)) };
+      replyTo = { id: parent.id, content: parent.content, author: publicUser(await getUser(parent.author_id)) };
     }
   }
   return {
     id: m.id,
     channelId: m.channel_id,
-    author: publicUser(getUser(m.author_id)),
+    author: publicUser(await getUser(m.author_id)),
     content: m.content,
     embed: m.embed ? JSON.parse(m.embed) : null,
     replyTo,
     reactions: Object.entries(grouped).map(([emoji, users]) => ({ emoji, users, count: users.length })),
-    createdAt: m.created_at,
-    editedAt: m.edited_at || null
+    createdAt: Number(m.created_at),
+    editedAt: m.edited_at ? Number(m.edited_at) : null
   };
 }
 
-function createMessage({ channelId, authorId, content = '', embed = null, replyTo = null }) {
+async function createMessage({ channelId, authorId, content = '', embed = null, replyTo = null }) {
   const id = newId();
-  run(
+  await run(
     'INSERT INTO messages (id, channel_id, author_id, content, embed, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     id, channelId, authorId, content, embed ? JSON.stringify(embed) : null, replyTo, now()
   );
-  return messagePayload(get('SELECT * FROM messages WHERE id = ?', id));
+  return messagePayload(await get('SELECT * FROM messages WHERE id = ?', id));
 }
 
 const getMessage = (id) => get('SELECT * FROM messages WHERE id = ?', id);
 
-function listMessages(channelId, { before = null, limit = 50 } = {}) {
+async function listMessages(channelId, { before = null, limit = 50 } = {}) {
   const rows = before
-    ? all(
+    ? await all(
         `SELECT * FROM messages WHERE channel_id = ?
            AND created_at < (SELECT created_at FROM messages WHERE id = ?)
          ORDER BY created_at DESC LIMIT ?`, channelId, before, limit)
-    : all('SELECT * FROM messages WHERE channel_id = ? ORDER BY created_at DESC LIMIT ?', channelId, limit);
-  return rows.reverse().map(messagePayload);
+    : await all('SELECT * FROM messages WHERE channel_id = ? ORDER BY created_at DESC LIMIT ?', channelId, limit);
+  const ordered = rows.reverse();
+  const out = [];
+  for (const r of ordered) out.push(await messagePayload(r));
+  return out;
 }
 
-function editMessage(id, content) {
-  run('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?', content, now(), id);
-  return messagePayload(get('SELECT * FROM messages WHERE id = ?', id));
+async function editMessage(id, content) {
+  await run('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?', content, now(), id);
+  return messagePayload(await get('SELECT * FROM messages WHERE id = ?', id));
 }
 
 const deleteMessage = (id) => run('DELETE FROM messages WHERE id = ?', id);
 
-function purgeMessages(channelId, count) {
-  const rows = all('SELECT id FROM messages WHERE channel_id = ? ORDER BY created_at DESC LIMIT ?', channelId, count);
-  for (const r of rows) deleteMessage(r.id);
+async function purgeMessages(channelId, count) {
+  const rows = await all('SELECT id FROM messages WHERE channel_id = ? ORDER BY created_at DESC LIMIT ?', channelId, count);
+  for (const r of rows) await deleteMessage(r.id);
   return rows.map((r) => r.id);
 }
 
-function toggleReaction(messageId, userId, emoji) {
-  const existing = get('SELECT 1 FROM reactions WHERE message_id = ? AND user_id = ? AND emoji = ?', messageId, userId, emoji);
-  if (existing) run('DELETE FROM reactions WHERE message_id = ? AND user_id = ? AND emoji = ?', messageId, userId, emoji);
-  else run('INSERT INTO reactions (message_id, user_id, emoji) VALUES (?, ?, ?)', messageId, userId, emoji);
-  return messagePayload(get('SELECT * FROM messages WHERE id = ?', messageId));
+async function toggleReaction(messageId, userId, emoji) {
+  const existing = await get('SELECT 1 FROM reactions WHERE message_id = ? AND user_id = ? AND emoji = ?', messageId, userId, emoji);
+  if (existing) await run('DELETE FROM reactions WHERE message_id = ? AND user_id = ? AND emoji = ?', messageId, userId, emoji);
+  else await run('INSERT INTO reactions (message_id, user_id, emoji) VALUES (?, ?, ?)', messageId, userId, emoji);
+  return messagePayload(await get('SELECT * FROM messages WHERE id = ?', messageId));
 }
 
 /* --------------------------------------------------------------- amizades */
@@ -370,18 +381,18 @@ function friendshipBetween(a, b) {
   );
 }
 
-function sendFriendRequest(fromId, toId) {
+async function sendFriendRequest(fromId, toId) {
   if (fromId === toId) throw new Error('Voce nao pode adicionar a si mesmo');
-  const existing = friendshipBetween(fromId, toId);
+  const existing = await friendshipBetween(fromId, toId);
   if (existing) {
     if (existing.status === 'accepted') throw new Error('Voces ja sao amigos');
     if (existing.status === 'blocked') throw new Error('Nao foi possivel enviar o pedido');
     if (existing.requester_id === fromId) throw new Error('Pedido ja enviado');
-    run("UPDATE friendships SET status = 'accepted' WHERE id = ?", existing.id);
+    await run("UPDATE friendships SET status = 'accepted' WHERE id = ?", existing.id);
     return { ...existing, status: 'accepted' };
   }
   const id = newId();
-  run(
+  await run(
     "INSERT INTO friendships (id, requester_id, addressee_id, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
     id, fromId, toId, now()
   );
@@ -389,32 +400,32 @@ function sendFriendRequest(fromId, toId) {
 }
 
 /** Amizade automatica, ja aceita — usada quando o convite de cadastro embute amizade. */
-function autoFriend(a, b) {
-  if (a === b || friendshipBetween(a, b)) return;
-  run(
+async function autoFriend(a, b) {
+  if (a === b || (await friendshipBetween(a, b))) return;
+  await run(
     "INSERT INTO friendships (id, requester_id, addressee_id, status, created_at) VALUES (?, ?, ?, 'accepted', ?)",
     newId(), a, b, now()
   );
 }
 
-function respondFriendRequest(friendshipId, userId, accept) {
-  const f = get('SELECT * FROM friendships WHERE id = ?', friendshipId);
+async function respondFriendRequest(friendshipId, userId, accept) {
+  const f = await get('SELECT * FROM friendships WHERE id = ?', friendshipId);
   if (!f || f.addressee_id !== userId || f.status !== 'pending') throw new Error('Pedido invalido');
-  if (accept) run("UPDATE friendships SET status = 'accepted' WHERE id = ?", friendshipId);
-  else run('DELETE FROM friendships WHERE id = ?', friendshipId);
+  if (accept) await run("UPDATE friendships SET status = 'accepted' WHERE id = ?", friendshipId);
+  else await run('DELETE FROM friendships WHERE id = ?', friendshipId);
   return { ...f, status: accept ? 'accepted' : 'declined' };
 }
 
-function removeFriend(userId, otherId) {
-  const f = friendshipBetween(userId, otherId);
-  if (f && f.status !== 'blocked') run('DELETE FROM friendships WHERE id = ?', f.id);
+async function removeFriend(userId, otherId) {
+  const f = await friendshipBetween(userId, otherId);
+  if (f && f.status !== 'blocked') await run('DELETE FROM friendships WHERE id = ?', f.id);
   return f;
 }
 
-function blockUser(userId, otherId) {
-  const f = friendshipBetween(userId, otherId);
-  if (f) run('DELETE FROM friendships WHERE id = ?', f.id);
-  run(
+async function blockUser(userId, otherId) {
+  const f = await friendshipBetween(userId, otherId);
+  if (f) await run('DELETE FROM friendships WHERE id = ?', f.id);
+  await run(
     "INSERT INTO friendships (id, requester_id, addressee_id, status, created_at) VALUES (?, ?, ?, 'blocked', ?)",
     newId(), userId, otherId, now()
   );
@@ -423,41 +434,43 @@ function blockUser(userId, otherId) {
 const unblockUser = (userId, otherId) =>
   run("DELETE FROM friendships WHERE requester_id = ? AND addressee_id = ? AND status = 'blocked'", userId, otherId);
 
-function listFriends(userId) {
-  const friends = all(
+async function listFriends(userId) {
+  const acceptedRows = await all(
     "SELECT * FROM friendships WHERE status = 'accepted' AND (requester_id = ? OR addressee_id = ?)",
     userId, userId
-  ).map((f) => publicUser(getUser(f.requester_id === userId ? f.addressee_id : f.requester_id)));
+  );
+  const friends = [];
+  for (const f of acceptedRows) friends.push(publicUser(await getUser(f.requester_id === userId ? f.addressee_id : f.requester_id)));
 
-  const incoming = all(
-    "SELECT * FROM friendships WHERE status = 'pending' AND addressee_id = ?", userId
-  ).map((f) => ({ id: f.id, user: publicUser(getUser(f.requester_id)), createdAt: f.created_at }));
+  const incomingRows = await all("SELECT * FROM friendships WHERE status = 'pending' AND addressee_id = ?", userId);
+  const incoming = [];
+  for (const f of incomingRows) incoming.push({ id: f.id, user: publicUser(await getUser(f.requester_id)), createdAt: Number(f.created_at) });
 
-  const outgoing = all(
-    "SELECT * FROM friendships WHERE status = 'pending' AND requester_id = ?", userId
-  ).map((f) => ({ id: f.id, user: publicUser(getUser(f.addressee_id)), createdAt: f.created_at }));
+  const outgoingRows = await all("SELECT * FROM friendships WHERE status = 'pending' AND requester_id = ?", userId);
+  const outgoing = [];
+  for (const f of outgoingRows) outgoing.push({ id: f.id, user: publicUser(await getUser(f.addressee_id)), createdAt: Number(f.created_at) });
 
-  const blocked = all(
-    "SELECT * FROM friendships WHERE status = 'blocked' AND requester_id = ?", userId
-  ).map((f) => publicUser(getUser(f.addressee_id)));
+  const blockedRows = await all("SELECT * FROM friendships WHERE status = 'blocked' AND requester_id = ?", userId);
+  const blocked = [];
+  for (const f of blockedRows) blocked.push(publicUser(await getUser(f.addressee_id)));
 
   return { friends: friends.filter(Boolean), incoming, outgoing, blocked: blocked.filter(Boolean) };
 }
 
-const areFriends = (a, b) => friendshipBetween(a, b)?.status === 'accepted';
+const areFriends = async (a, b) => (await friendshipBetween(a, b))?.status === 'accepted';
 
-const isBlocked = (a, b) => {
-  const f = friendshipBetween(a, b);
+const isBlocked = async (a, b) => {
+  const f = await friendshipBetween(a, b);
   return f?.status === 'blocked';
 };
 
 /* -------------------------------------------------------- config do guild */
 
-function getSettings(guildId) {
-  let s = get('SELECT * FROM guild_settings WHERE guild_id = ?', guildId);
+async function getSettings(guildId) {
+  let s = await get('SELECT * FROM guild_settings WHERE guild_id = ?', guildId);
   if (!s) {
-    run('INSERT INTO guild_settings (guild_id) VALUES (?)', guildId);
-    s = get('SELECT * FROM guild_settings WHERE guild_id = ?', guildId);
+    await run('INSERT INTO guild_settings (guild_id) VALUES (?)', guildId);
+    s = await get('SELECT * FROM guild_settings WHERE guild_id = ?', guildId);
   }
   return s;
 }
@@ -469,11 +482,11 @@ const SETTING_COLUMNS = new Set([
   'org_domain'
 ]);
 
-function updateSettings(guildId, patch) {
-  getSettings(guildId);
+async function updateSettings(guildId, patch) {
+  await getSettings(guildId);
   for (const [key, value] of Object.entries(patch)) {
     if (!SETTING_COLUMNS.has(key)) continue;
-    run(`UPDATE guild_settings SET ${key} = ? WHERE guild_id = ?`, value, guildId);
+    await run(`UPDATE guild_settings SET ${key} = ? WHERE guild_id = ?`, value, guildId);
   }
   return getSettings(guildId);
 }
@@ -487,8 +500,8 @@ const markRead = (userId, channelId) =>
     userId, channelId, now()
   );
 
-function unreadCounts(userId) {
-  const rows = all(
+async function unreadCounts(userId) {
+  const rows = await all(
     `SELECT m.channel_id AS cid, COUNT(*) AS n
      FROM messages m
      LEFT JOIN read_state r ON r.channel_id = m.channel_id AND r.user_id = ?
@@ -505,7 +518,7 @@ function unreadCounts(userId) {
     userId, userId, userId, userId
   );
   const out = {};
-  for (const r of rows) out[r.cid] = r.n;
+  for (const r of rows) out[r.cid] = Number(r.n);
   return out;
 }
 
@@ -520,23 +533,27 @@ const logAudit = (guildId, actorId, action, targetId = null, meta = null) =>
     newId(), guildId, actorId || null, action, targetId || null, meta ? JSON.stringify(meta) : null, now()
   );
 
-function listAuditLog(guildId, { before = null, limit = 50 } = {}) {
+async function listAuditLog(guildId, { before = null, limit = 50 } = {}) {
   const rows = before
-    ? all('SELECT * FROM audit_log WHERE guild_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT ?', guildId, before, Math.min(limit, 100))
-    : all('SELECT * FROM audit_log WHERE guild_id = ? ORDER BY created_at DESC LIMIT ?', guildId, Math.min(limit, 100));
-  return rows.map((r) => ({
-    id: r.id,
-    actor: r.actor_id ? publicUser(getUser(r.actor_id)) : null,
-    action: r.action,
-    target: r.target_id ? publicUser(getUser(r.target_id)) : null,
-    meta: r.meta ? JSON.parse(r.meta) : null,
-    createdAt: r.created_at
-  }));
+    ? await all('SELECT * FROM audit_log WHERE guild_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT ?', guildId, before, Math.min(limit, 100))
+    : await all('SELECT * FROM audit_log WHERE guild_id = ? ORDER BY created_at DESC LIMIT ?', guildId, Math.min(limit, 100));
+  const out = [];
+  for (const r of rows) {
+    out.push({
+      id: r.id,
+      actor: r.actor_id ? publicUser(await getUser(r.actor_id)) : null,
+      action: r.action,
+      target: r.target_id ? publicUser(await getUser(r.target_id)) : null,
+      meta: r.meta ? JSON.parse(r.meta) : null,
+      createdAt: Number(r.created_at)
+    });
+  }
+  return out;
 }
 
 /** Emails com esse dominio entram no servidor sozinhos, sem convite. */
-const domainMatches = (guildId, email) => {
-  const domain = getSettings(guildId).org_domain;
+const domainMatches = async (guildId, email) => {
+  const domain = (await getSettings(guildId)).org_domain;
   if (!domain) return false;
   return String(email || '').toLowerCase().endsWith('@' + domain.toLowerCase());
 };

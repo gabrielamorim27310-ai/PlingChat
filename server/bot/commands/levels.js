@@ -17,17 +17,18 @@ const commands = [
     description: 'Mostra seu nivel e progresso de XP',
     usage: 'nivel [@usuario]',
     guildOnly: true,
-    run(ctx) {
-      const target = ctx.argStr ? store.findMemberByName(ctx.guild.id, ctx.argStr) : ctx.user;
+    async run(ctx) {
+      const target = ctx.argStr ? await store.findMemberByName(ctx.guild.id, ctx.argStr) : ctx.user;
       if (!target) return ctx.reply('Usuario nao encontrado.');
-      const m = store.getMember(ctx.guild.id, target.id);
+      const m = await store.getMember(ctx.guild.id, target.id);
       if (!m) return ctx.reply('Esse usuario nao e membro do servidor.');
 
       const needed = xpForLevel(m.level);
-      const position = all(
+      const ranked = await all(
         `SELECT user_id FROM guild_members WHERE guild_id = ?
          ORDER BY level DESC, xp DESC`, ctx.guild.id
-      ).findIndex((r) => r.user_id === target.id) + 1;
+      );
+      const position = ranked.findIndex((r) => r.user_id === target.id) + 1;
 
       return ctx.reply('', ctx.embed({
         color: target.avatar_color,
@@ -47,8 +48,8 @@ const commands = [
     aliases: ['leaderboard', 'lb', 'niveis'],
     description: 'Ranking de niveis do servidor',
     guildOnly: true,
-    run(ctx) {
-      const rows = all(
+    async run(ctx) {
+      const rows = await all(
         `SELECT u.username, m.level, m.xp FROM guild_members m
          JOIN users u ON u.id = m.user_id
          WHERE m.guild_id = ? AND u.is_bot = 0
@@ -71,19 +72,19 @@ const commands = [
     usage: 'darxp @usuario 500',
     guildOnly: true,
     permission: 'admin',
-    run(ctx) {
+    async run(ctx) {
       const [name, amountRaw] = ctx.args;
       const amount = parseInt(amountRaw, 10);
-      const target = store.findMemberByName(ctx.guild.id, name);
+      const target = await store.findMemberByName(ctx.guild.id, name);
       if (!target || !Number.isFinite(amount)) return ctx.reply('Use: `!darxp @usuario 500`');
 
-      const m = store.getMember(ctx.guild.id, target.id);
+      const m = await store.getMember(ctx.guild.id, target.id);
       let xp = Math.max(0, m.xp + amount);
       let level = m.level;
       while (xp >= xpForLevel(level)) { xp -= xpForLevel(level); level += 1; }
       while (level > 0 && xp < 0) { level -= 1; xp += xpForLevel(level); }
 
-      run('UPDATE guild_members SET xp = ?, level = ? WHERE guild_id = ? AND user_id = ?',
+      await run('UPDATE guild_members SET xp = ?, level = ? WHERE guild_id = ? AND user_id = ?',
         xp, level, ctx.guild.id, target.id);
       ctx.bot.deliver?.({ __memberUpdated: true, guildId: ctx.guild.id, userId: target.id });
       return ctx.reply('', ctx.embed({
@@ -98,10 +99,10 @@ const commands = [
     usage: 'resetxp @usuario',
     guildOnly: true,
     permission: 'admin',
-    run(ctx) {
-      const target = store.findMemberByName(ctx.guild.id, ctx.argStr);
+    async run(ctx) {
+      const target = await store.findMemberByName(ctx.guild.id, ctx.argStr);
       if (!target) return ctx.reply('Usuario nao encontrado.');
-      run('UPDATE guild_members SET xp = 0, level = 0 WHERE guild_id = ? AND user_id = ?', ctx.guild.id, target.id);
+      await run('UPDATE guild_members SET xp = 0, level = 0 WHERE guild_id = ? AND user_id = ?', ctx.guild.id, target.id);
       ctx.bot.deliver?.({ __memberUpdated: true, guildId: ctx.guild.id, userId: target.id });
       return ctx.reply('', ctx.embed({ color: ctx.COLORS.warn, description: `♻️ XP de **${target.username}** zerado.` }));
     }

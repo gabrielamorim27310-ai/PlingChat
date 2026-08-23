@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { $, el, icon, avatarNode, escapeHtml, initials, resizeImageToDataUrl } from './util.js';
+import { $, el, icon, avatarNode, escapeHtml, initials } from './util.js';
 import { state, socket, toast, openGuild, openHome, startDM, refresh, appConfig, setupPush, applyTheme, getTheme } from './app.js';
 
 /* ============================================================ básico ==== */
@@ -570,6 +570,187 @@ function appInvites() {
   });
 }
 
+/**
+ * Abre a webcam num overlay próprio (fora do sistema de modal padrão, pra
+ * não perder o que já estava sendo editado por trás) e devolve o frame
+ * capturado como File. Usado só no desktop — celular já tem câmera nativa
+ * via <input capture>.
+ */
+function cameraCapture() {
+  return new Promise((resolve) => {
+    let stream = null;
+    const stop = () => stream?.getTracks().forEach((t) => t.stop());
+
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+      .then((s) => {
+        stream = s;
+        const video = el('video', { autoplay: true, playsInline: true, muted: true });
+        video.srcObject = stream;
+
+        const overlay = el('div', { class: 'camera-overlay' },
+          el('div', { class: 'camera-card' },
+            el('h3', {}, 'Tirar foto'),
+            video,
+            el('div', { class: 'camera-actions' },
+              el('button', {
+                class: 'btn btn-ghost',
+                onclick: () => { stop(); overlay.remove(); resolve(null); }
+              }, 'Cancelar'),
+              el('button', {
+                class: 'btn btn-primary',
+                onclick: () => {
+                  const canvas = document.createElement('canvas');
+                  canvas.width = video.videoWidth;
+                  canvas.height = video.videoHeight;
+                  const ctx = canvas.getContext('2d');
+                  // espelha de volta: a prévia já aparece espelhada (efeito selfie)
+                  ctx.translate(canvas.width, 0);
+                  ctx.scale(-1, 1);
+                  ctx.drawImage(video, 0, 0);
+                  stop();
+                  overlay.remove();
+                  canvas.toBlob(
+                    (blob) => resolve(blob ? new File([blob], 'foto.jpg', { type: 'image/jpeg' }) : null),
+                    'image/jpeg', 0.92);
+                }
+              }, 'Capturar'))));
+        document.body.append(overlay);
+      })
+      .catch(() => { toast('Não consegui acessar a câmera.', 'err'); resolve(null); });
+  });
+}
+
+const PHOTO_FILTERS = [
+  { name: 'Nenhum', css: '' },
+  { name: 'P&B', css: 'grayscale(1)' },
+  { name: 'Sépia', css: 'sepia(.75)' },
+  { name: 'Vívido', css: 'saturate(1.6) contrast(1.08)' },
+  { name: 'Frio', css: 'saturate(1.1) hue-rotate(-10deg) brightness(1.02)' },
+  { name: 'Quente', css: 'saturate(1.15) hue-rotate(10deg) brightness(1.03)' }
+];
+
+/**
+ * Editor de foto num overlay próprio: recorte (arrastar + zoom), rotação
+ * em passos de 90° e filtros. Devolve um data URL JPEG quadrado pronto pro
+ * avatar, ou null se cancelado.
+ */
+function photoEditor(file) {
+  const EXPORT = 512;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onerror = () => { URL.revokeObjectURL(url); toast('Não consegui abrir essa imagem.', 'err'); resolve(null); };
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+
+      let rotation = 0;   // 0 | 90 | 180 | 270
+      let zoom = 1;        // 1..3
+      let panX = 0, panY = 0;
+      let filterCss = '';
+
+      const canvas = el('canvas', { width: EXPORT, height: EXPORT });
+      const ctx = canvas.getContext('2d');
+
+      // Escala que faz a imagem cobrir o quadrado de exportação inteiro.
+      const coverScale = Math.max(EXPORT / img.width, EXPORT / img.height);
+      const drawW = img.width * coverScale;
+      const drawH = img.height * coverScale;
+
+      const clampPan = () => {
+        const swapped = rotation === 90 || rotation === 270;
+        const halfW = ((swapped ? drawH : drawW) * zoom) / 2;
+        const halfH = ((swapped ? drawW : drawH) * zoom) / 2;
+        const maxX = Math.max(0, halfW - EXPORT / 2);
+        const maxY = Math.max(0, halfH - EXPORT / 2);
+        panX = Math.min(maxX, Math.max(-maxX, panX));
+        panY = Math.min(maxY, Math.max(-maxY, panY));
+      };
+
+      const render = () => {
+        clampPan();
+        ctx.clearRect(0, 0, EXPORT, EXPORT);
+        ctx.save();
+        ctx.filter = filterCss;
+        ctx.translate(EXPORT / 2 + panX, EXPORT / 2 + panY);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.scale(zoom, zoom);
+        ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+        ctx.restore();
+      };
+
+      const wrap = el('div', { class: 'photo-editor-canvas-wrap' }, canvas);
+      let dragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      wrap.addEventListener('pointerdown', (e) => {
+        dragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        wrap.setPointerCapture(e.pointerId);
+      });
+      wrap.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const scale = canvas.width / wrap.clientWidth;
+        panX = startPanX + (e.clientX - startX) * scale;
+        panY = startPanY + (e.clientY - startY) * scale;
+        render();
+      });
+      wrap.addEventListener('pointerup', () => { dragging = false; });
+      wrap.addEventListener('pointercancel', () => { dragging = false; });
+
+      // Miniatura fixa (sem filtro) usada como base visual dos botões de filtro.
+      const thumbCanvas = document.createElement('canvas');
+      thumbCanvas.width = 88; thumbCanvas.height = 88;
+      const tScale = Math.max(88 / img.width, 88 / img.height);
+      thumbCanvas.getContext('2d').drawImage(
+        img, (88 - img.width * tScale) / 2, (88 - img.height * tScale) / 2, img.width * tScale, img.height * tScale);
+      const thumbUrl = thumbCanvas.toDataURL('image/jpeg', 0.7);
+
+      const filterRow = el('div', { class: 'filter-row' });
+      for (const f of PHOTO_FILTERS) {
+        const btn = el('button', {
+          class: `filter-swatch ${f.css === filterCss ? 'active' : ''}`,
+          title: f.name,
+          onclick: () => {
+            filterCss = f.css;
+            for (const b of filterRow.children) b.classList.remove('active');
+            btn.classList.add('active');
+            render();
+          }
+        }, el('img', { src: thumbUrl, alt: '', style: f.css ? `filter:${f.css}` : '' }));
+        filterRow.append(btn);
+      }
+
+      const zoomInput = el('input', { type: 'range', min: 100, max: 300, value: 100 });
+      zoomInput.addEventListener('input', () => { zoom = Number(zoomInput.value) / 100; render(); });
+
+      const rotate = (delta) => { rotation = (rotation + delta + 360) % 360; render(); };
+
+      const overlay = el('div', { class: 'photo-editor' },
+        el('div', { class: 'photo-editor-card' },
+          el('h3', {}, 'Ajustar foto'),
+          wrap,
+          el('div', { class: 'photo-editor-controls' },
+            el('div', { class: 'photo-editor-row' }, el('span', { class: 'lbl' }, 'Zoom'), zoomInput),
+            el('div', { class: 'photo-editor-row' },
+              el('span', { class: 'lbl' }, 'Girar'),
+              el('button', { class: 'btn btn-ghost', onclick: () => rotate(-90) }, '↺'),
+              el('button', { class: 'btn btn-ghost', onclick: () => rotate(90) }, '↻')),
+            filterRow),
+          el('div', { class: 'photo-editor-actions' },
+            el('button', { class: 'btn btn-ghost', onclick: () => { overlay.remove(); resolve(null); } }, 'Cancelar'),
+            el('button', {
+              class: 'btn btn-primary',
+              onclick: () => { const dataUrl = canvas.toDataURL('image/jpeg', 0.85); overlay.remove(); resolve(dataUrl); }
+            }, 'Aplicar'))));
+
+      document.body.append(overlay);
+      render();
+    };
+    img.src = url;
+  });
+}
+
 function userSettings() {
   const colors = ['#9b4dff', '#d94fc0', '#5eead4', '#37b6f0', '#f0c264', '#ff7a7a', '#3d7ce0', '#7ec8f5', '#ff7ab8'];
   const custom = el('input', { type: 'text', maxlength: 60, value: state.me.customStatus || '', placeholder: 'Jogando alguma coisa...' });
@@ -578,9 +759,7 @@ function userSettings() {
 
   let color = state.me.avatarColor;
   let photo = state.me.avatarUrl || null;  // null = sem foto (mostra a cor); string = data URL
-  let photoNode = photo ? el('img', {
-    src: photo, alt: '', style: 'width:100%;height:100%;border-radius:50%;object-fit:cover'
-  }) : null;
+  let photoNode = photo ? el('img', { src: photo, alt: '' }) : null;
 
   const previewAvatar = avatarNode(state.me, { size: 64, status: false });
   if (photoNode) previewAvatar.replaceChildren(photoNode);
@@ -592,7 +771,7 @@ function userSettings() {
     removeBtn.hidden = !photo;
     previewAvatar.replaceChildren();
     if (dataUrl) {
-      photoNode = el('img', { src: dataUrl, alt: '', style: 'width:100%;height:100%;border-radius:50%;object-fit:cover' });
+      photoNode = el('img', { src: dataUrl, alt: '' });
       previewAvatar.append(photoNode);
       previewAvatar.style.background = color;
     } else {
@@ -602,24 +781,42 @@ function userSettings() {
     }
   };
 
-  const fileInput = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', hidden: true });
-  fileInput.addEventListener('change', async () => {
-    const file = fileInput.files?.[0];
-    fileInput.value = '';
+  const handleFile = async (file) => {
     if (!file) return;
-    if (file.size > 8 * 1024 * 1024) return toast('Escolha uma imagem de até 8MB.', 'err');
-    try {
-      const dataUrl = await resizeImageToDataUrl(file, 256);
-      setPreviewPhoto(dataUrl);
-    } catch (err) {
-      toast('Não consegui processar essa imagem.', 'err');
-    }
-  });
+    if (!file.type.startsWith('image/')) return toast('Escolha uma imagem.', 'err');
+    if (file.size > 15 * 1024 * 1024) return toast('Escolha uma imagem de até 15MB.', 'err');
+    const dataUrl = await photoEditor(file);
+    if (dataUrl) setPreviewPhoto(dataUrl);
+  };
 
-  const photoButtons = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:10px' },
-    el('button', { class: 'btn btn-ghost', onclick: () => fileInput.click() }, icon('camera', 15), ' Alterar foto'),
-    removeBtn,
-    fileInput);
+  const pickInput = (extra = {}) => {
+    const input = el('input', { type: 'file', accept: 'image/*', hidden: true, ...extra });
+    input.addEventListener('change', () => { handleFile(input.files?.[0]); input.value = ''; });
+    return input;
+  };
+
+  // Sem "capture", o próprio SO já mostra câmera + galeria/arquivos no
+  // mesmo seletor nativo — não existe um jeito padrão de forçar só um dos
+  // dois no navegador. Com "capture", o celular pula direto pra câmera.
+  const isTouch = matchMedia('(pointer: coarse)').matches;
+  const cameraInput = pickInput({ capture: 'user' });
+  const galleryInput = pickInput();
+  const filesInput = pickInput();
+
+  const sourceButtons = isTouch ? [
+    el('button', { class: 'btn btn-ghost', onclick: () => cameraInput.click() }, icon('camera', 15), ' Tirar foto'),
+    el('button', { class: 'btn btn-ghost', onclick: () => galleryInput.click() }, 'Da galeria'),
+    el('button', { class: 'btn btn-ghost', onclick: () => filesInput.click() }, 'Arquivos')
+  ] : [
+    el('button', {
+      class: 'btn btn-ghost',
+      onclick: async () => { const file = await cameraCapture(); if (file) handleFile(file); }
+    }, icon('camera', 15), ' Tirar foto agora'),
+    el('button', { class: 'btn btn-ghost', onclick: () => filesInput.click() }, 'Escolher arquivo')
+  ];
+
+  const photoButtons = el('div', { class: 'avatar-source-row' },
+    sourceButtons, removeBtn, cameraInput, galleryInput, filesInput);
 
   const swatches = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
     colors.map((c) => {

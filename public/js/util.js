@@ -265,12 +265,7 @@ export function avatarNode(user, { size = null, status = true } = {}) {
   }, user?.avatarUrl ? '' : initials(user?.username));
 
   if (user?.avatarUrl) {
-    node.append(el('img', {
-      src: user.avatarUrl,
-      alt: '',
-      referrerPolicy: 'no-referrer',
-      style: 'width:100%;height:100%;border-radius:50%;object-fit:cover'
-    }));
+    node.append(el('img', { src: user.avatarUrl, alt: '', referrerPolicy: 'no-referrer' }));
   }
   if (status && user?.status) node.dataset.status = user.status;
   return node;

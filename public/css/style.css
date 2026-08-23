@@ -324,15 +324,37 @@ button { background: none; border: 0; cursor: pointer; }
   background: #06070a; border-bottom: 1px solid var(--line); display: flex; flex-direction: column;
   height: var(--stage-h, 68vh); min-height: 220px; max-height: 88vh;
 }
-/* auto-fit sem teto: com poucos participantes, cada ladrilho cresce (1fr)
-   pra ocupar o espaço disponível em vez de travar num tamanho pequeno fixo. */
+/* auto-fit sem teto pequeno: com poucos participantes, a coluna cresce (1fr)
+   em vez de travar num tamanho minusculo -- mas quem trava o tamanho de
+   verdade e o proprio .tile (max-width/max-height), centralizado na coluna;
+   senao, com 1-2 pessoas, a coluna vira gigante e o vídeo estica demais. */
 .stage-grid {
   flex: 1; display: grid; gap: 10px; padding: 10px; overflow: auto;
   grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
   grid-auto-rows: minmax(160px, 1fr); justify-content: center; align-content: center;
+  justify-items: center; align-items: center;
 }
-.tile { position: relative; background: var(--bg-1); border-radius: 10px; overflow: hidden; min-height: 140px; aspect-ratio: 16/9; display: grid; place-items: center; border: 2px solid transparent; }
+.tile {
+  position: relative; background: var(--bg-1); border-radius: 10px; overflow: hidden;
+  width: 100%; height: 100%; max-width: 720px; max-height: 460px; min-height: 140px;
+  aspect-ratio: 16/9; display: grid; place-items: center; border: 2px solid transparent;
+}
 .tile.speaking { border-color: var(--green); }
+
+/* Modo "spotlight" (igual Zoom/Meet): quando alguem compartilha a tela, ela
+   ocupa a area principal e as cameras encolhem numa faixa lateral. */
+.stage-grid.spotlight {
+  display: grid; grid-template-columns: 1fr 190px; align-items: stretch; justify-items: stretch;
+}
+.spotlight-main { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; }
+.spotlight-main .tile { width: 100%; height: 100%; max-width: none; max-height: none; }
+.spotlight-side { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
+.spotlight-side .tile { width: 100%; max-width: none; flex: none; height: auto; max-height: 130px; }
+@media (max-width: 860px) {
+  .stage-grid.spotlight { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .spotlight-side { flex-direction: row; overflow-x: auto; overflow-y: hidden; }
+  .spotlight-side .tile { width: 130px; flex: none; }
+}
 .tile video { width: 100%; height: 100%; object-fit: contain; background: #000; }
 .tile .tile-avatar { display: grid; place-items: center; }
 .tile .tile-name { position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,.65); padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 5px; }

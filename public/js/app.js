@@ -1217,7 +1217,7 @@ function renderStage() {
       seen.add(key);
       let node = grid.querySelector(`[data-tile="${key}"]`);
       if (!node) {
-        node = el('div', { class: 'tile', dataset: { tile: key } },
+        node = el('div', { class: `tile${kind === 'screen' ? ' screen' : ''}`, dataset: { tile: key } },
           el('video', { autoplay: true, playsInline: true, muted: tile.self }),
           el('div', { class: 'tile-name' }, `${tile.user?.username ?? ''}`),
           kind === 'screen' ? el('div', { class: 'tile-tag' }, icon('monitor', 12), 'tela') : null);
@@ -1245,8 +1245,27 @@ function renderStage() {
     }
   }
 
-  for (const node of [...grid.children]) {
+  for (const node of grid.querySelectorAll('[data-tile]')) {
     if (!seen.has(node.dataset.tile)) node.remove();
+  }
+
+  // Modo "spotlight" (Zoom/Meet): com alguem compartilhando tela, ela vira
+  // grande na area principal e o resto encolhe numa faixa lateral.
+  const screenTiles = [...grid.querySelectorAll('.tile.screen')];
+  const otherTiles = [...grid.querySelectorAll('.tile:not(.screen)')];
+  if (screenTiles.length) {
+    grid.classList.add('spotlight');
+    let main = grid.querySelector(':scope > .spotlight-main');
+    if (!main) { main = el('div', { class: 'spotlight-main' }); grid.append(main); }
+    let side = grid.querySelector(':scope > .spotlight-side');
+    if (!side) { side = el('div', { class: 'spotlight-side' }); grid.append(side); }
+    for (const node of screenTiles) main.append(node);
+    for (const node of otherTiles) side.append(node);
+  } else {
+    grid.classList.remove('spotlight');
+    for (const node of [...screenTiles, ...otherTiles]) grid.append(node);
+    grid.querySelector(':scope > .spotlight-main')?.remove();
+    grid.querySelector(':scope > .spotlight-side')?.remove();
   }
 
   $('#stageMic').classList.toggle('active', !voice.state.muted);

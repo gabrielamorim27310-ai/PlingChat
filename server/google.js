@@ -84,8 +84,17 @@ async function loginWithGoogle(credential, inviteCode = null) {
     // esta fechado.
     await invites.assertUsable(inviteCode);
 
+    // Nome tem que ser unico -- sem tela de cadastro pra pedir outro nome
+    // nesse fluxo, entao so acrescenta um numero ate achar um livre.
+    let username = usernameFrom(payload);
+    if (await store.usernameTaken(username)) {
+      let n = 2;
+      while (await store.usernameTaken(`${username}${n}`)) n++;
+      username = `${username}${n}`;
+    }
+
     user = await store.createUser({
-      username: usernameFrom(payload),
+      username,
       email: payload.email ? String(payload.email).toLowerCase() : null,
       passwordHash: null
     });

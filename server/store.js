@@ -31,6 +31,10 @@ function publicUser(u) {
   };
 }
 
+/** Mesmo com a #tag, dois usuários com o mesmo nome confundem -- nome tem
+ * que ser único (sem diferenciar maiúscula/minúscula). */
+const usernameTaken = async (username) => !!(await get('SELECT 1 FROM users WHERE lower(username) = lower(?)', username));
+
 async function freeTag(username) {
   for (let i = 0; i < 200; i++) {
     const tag = String(Math.floor(1000 + Math.random() * 9000));
@@ -579,7 +583,7 @@ const listSubscriptions = (userId) => all('SELECT * FROM push_subscriptions WHER
 
 module.exports = {
   now, pickColor, publicUser, BOT_USER_ID,
-  createUser, getUser, getUserByEmail, getUserByGoogleSub, getUserByHandle, searchUsers, setStatus, updateProfile,
+  createUser, usernameTaken, getUser, getUserByEmail, getUserByGoogleSub, getUserByHandle, searchUsers, setStatus, updateProfile,
   guildPayload, createGuild, getGuild, getGuildByInvite, deleteGuild, listGuildsOfUser,
   addMember, getMember, removeMember, memberCount, listMembers, memberPayload, findMemberByName,
   rank, ROLE_RANK, setRole, isBanned, banMember, unbanMember, listBans,

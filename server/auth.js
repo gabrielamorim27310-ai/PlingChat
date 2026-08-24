@@ -43,6 +43,7 @@ async function register({ username, email, password, inviteCode }) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('E-mail invalido');
   if (String(password || '').length < 6) throw new Error('A senha precisa de pelo menos 6 caracteres');
   if (await store.getUserByEmail(email)) throw new Error('Ja existe uma conta com este e-mail');
+  if (await store.usernameTaken(username)) throw new Error('Esse nome de usuario ja esta em uso. Escolha outro.');
 
   // Valida o convite antes de criar qualquer coisa.
   await invites.assertUsable(inviteCode);

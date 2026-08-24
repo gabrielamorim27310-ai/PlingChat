@@ -283,6 +283,87 @@ function guildSettings(guild) {
   const settings = { ...guild.settings };
   const textChannels = guild.channels.filter((c) => c.type === 'text');
 
+  /* ------------------------------------------------- aparência (ícone) --- */
+  const guildColors = ['#9b4dff', '#d94fc0', '#5eead4', '#37b6f0', '#f0c264', '#ff7a7a', '#3d7ce0', '#7ec8f5', '#ff7ab8'];
+  let iconColor = guild.iconColor;
+  let iconPhoto = guild.iconUrl || null;
+
+  const iconPreview = el('span', {
+    class: 'avatar big', style: iconPhoto ? '' : `background:${iconColor}`
+  }, iconPhoto ? el('img', { src: iconPhoto, alt: '' }) : initials(guild.name));
+
+  const iconRemoveBtn = el('button', { class: 'btn btn-ghost', hidden: !iconPhoto, onclick: () => setIconPreview(null) }, 'Remover foto');
+
+  const setIconPreview = (dataUrl) => {
+    iconPhoto = dataUrl;
+    iconRemoveBtn.hidden = !iconPhoto;
+    iconPreview.replaceChildren();
+    if (dataUrl) {
+      iconPreview.append(el('img', { src: dataUrl, alt: '' }));
+      iconPreview.style.background = iconColor;
+    } else {
+      iconPreview.style.background = iconColor;
+      iconPreview.textContent = initials(guild.name);
+    }
+  };
+
+  const iconHandleFile = async (file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return toast('Escolha uma imagem.', 'err');
+    if (file.size > 15 * 1024 * 1024) return toast('Escolha uma imagem de até 15MB.', 'err');
+    const dataUrl = await photoEditor(file);
+    if (dataUrl) setIconPreview(dataUrl);
+  };
+
+  const iconPickInput = (extra = {}) => {
+    const input = el('input', { type: 'file', accept: 'image/*', hidden: true, ...extra });
+    input.addEventListener('change', () => { iconHandleFile(input.files?.[0]); input.value = ''; });
+    return input;
+  };
+
+  const iconIsTouch = matchMedia('(pointer: coarse)').matches;
+  const iconCameraInput = iconPickInput({ capture: 'environment' });
+  const iconFilesInput = iconPickInput();
+
+  const iconSourceButtons = iconIsTouch ? [
+    el('button', { class: 'btn btn-ghost', onclick: () => iconCameraInput.click() }, icon('camera', 15), ' Tirar foto'),
+    el('button', { class: 'btn btn-ghost', onclick: () => iconFilesInput.click() }, 'Da galeria/arquivos')
+  ] : [
+    el('button', {
+      class: 'btn btn-ghost',
+      onclick: async () => { const file = await cameraCapture(); if (file) iconHandleFile(file); }
+    }, icon('camera', 15), ' Tirar foto agora'),
+    el('button', { class: 'btn btn-ghost', onclick: () => iconFilesInput.click() }, 'Escolher arquivo')
+  ];
+
+  const iconSwatches = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:10px' },
+    guildColors.map((c) => {
+      const dot = el('button', {
+        style: `width:30px;height:30px;border-radius:50%;background:${c};border:3px solid ${c === iconColor ? '#fff' : 'transparent'}`,
+        onclick: () => {
+          iconColor = c;
+          for (const node of iconSwatches.children) node.style.borderColor = 'transparent';
+          dot.style.borderColor = '#fff';
+          if (!iconPhoto) iconPreview.style.background = c;
+        }
+      });
+      return dot;
+    }));
+
+  const saveIcon = async () => {
+    try {
+      const patch = { iconColor };
+      if (iconPhoto !== (guild.iconUrl || null)) patch.iconUrl = iconPhoto;
+      const { guild: updated } = await api.patch(`/guilds/${guild.id}/icon`, patch);
+      guild.iconColor = updated.iconColor;
+      guild.iconUrl = updated.iconUrl;
+      refresh.rail();
+      toast('Aparência do servidor atualizada!', 'ok');
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  };
+
   const channelSelect = (value) => {
     const select = el('select', {}, el('option', { value: '' }, '— nenhum —'),
       textChannels.map((c) => el('option', { value: c.id }, `# ${c.name}`)));
@@ -332,6 +413,13 @@ function guildSettings(guild) {
     title: `Configurações · ${guild.name}`,
     subtitle: 'Tudo que o Nexy faz neste servidor é ajustado aqui.',
     body: el('div', {},
+      el('h4', { style: 'margin:4px 0 10px;color:var(--brand-2);font-size:12px;text-transform:uppercase' }, 'Aparência'),
+      el('div', { style: 'display:flex;gap:14px;align-items:center;margin-bottom:14px' },
+        iconPreview,
+        el('div', {}, el('div', { class: 'avatar-source-row' }, iconSourceButtons, iconRemoveBtn, iconCameraInput, iconFilesInput))),
+      field('Cor do servidor', iconSwatches),
+      el('button', { class: 'btn btn-primary btn-block', style: 'margin:4px 0 22px', onclick: saveIcon }, 'Salvar aparência'),
+
       el('h4', { style: 'margin:4px 0 10px;color:var(--brand-2);font-size:12px;text-transform:uppercase' }, 'Empresa'),
       field('Domínio de e-mail verificado', orgDomain),
       el('p', { style: 'font-size:12px;color:var(--text-mute);margin-top:-8px' },

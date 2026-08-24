@@ -227,6 +227,7 @@ button { background: none; border: 0; cursor: pointer; }
 }
 .rail-item:hover, .rail-item.active { border-radius: 12px; }
 .rail-item.active { background: var(--brand-gradient); box-shadow: 0 0 0 3px rgba(155,77,255,.22), inset 0 1px 0 rgba(255,255,255,.08); }
+.rail-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .rail-home.active { background: var(--brand-gradient); }
 .rail-glyph svg { width: 20px; height: 20px; }
 .rail-add { color: var(--green); }

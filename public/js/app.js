@@ -642,6 +642,14 @@ function connectSocket() {
     if (g) g.settings = settings;
   });
 
+  socket.on('guild:info', ({ guildId, ...patch }) => {
+    const g = guild(guildId);
+    if (!g) return;
+    Object.assign(g, patch);
+    renderRail();
+    renderSidebar();
+  });
+
   socket.on('guild:removed', ({ guildId }) => {
     state.guilds = state.guilds.filter((g) => g.id !== guildId);
     renderRail();
@@ -747,9 +755,9 @@ function renderRail() {
     const button = el('button', {
       class: `rail-item ${state.activeGuildId === g.id ? 'active' : ''}`,
       title: g.name,
-      style: state.activeGuildId === g.id ? '' : `background:${g.iconColor}`,
+      style: (state.activeGuildId === g.id || g.iconUrl) ? '' : `background:${g.iconColor}`,
       onclick: () => openGuild(g.id)
-    }, el('span', {}, initials(g.name)), el('span', { class: 'rail-pill' }));
+    }, g.iconUrl ? el('img', { src: g.iconUrl, alt: '' }) : el('span', {}, initials(g.name)), el('span', { class: 'rail-pill' }));
 
     if (unread) button.append(el('span', { class: `rail-badge ${mentioned ? 'mentioned' : ''}` }, unread > 99 ? '99+' : unread));
     container.append(button);

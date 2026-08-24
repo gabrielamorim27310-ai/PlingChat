@@ -7,7 +7,11 @@ const now = () => Date.now();
 /** Id fixo do bot integrado (ver server/bot/index.js). */
 const BOT_USER_ID = 'nexy-bot-0001';
 
-const AVATAR_COLORS = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#00b0f4', '#f47b67', '#9b59b6', '#1abc9c', '#e67e22'];
+// Mesma paleta da marca usada no seletor de cor do avatar do usuário (ver
+// userSettings() em modals.js) -- antes essa lista aqui era a paleta velha
+// de antes do reskin (blurple etc.), então servidor novo podia sair com uma
+// cor completamente fora da identidade visual atual.
+const AVATAR_COLORS = ['#9b4dff', '#d94fc0', '#5eead4', '#37b6f0', '#f0c264', '#ff7a7a', '#3d7ce0', '#7ec8f5', '#ff7ab8'];
 const pickColor = () => AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
 
 /* ------------------------------------------------------------------ users */
@@ -103,11 +107,24 @@ async function freeInviteCode() {
   }
 }
 
+/** Sorteia uma cor que essa pessoa ainda não usa em nenhum outro servidor
+ * dela -- sem isso, dois ícones vizinhos na barra podem sair idênticos. */
+async function pickGuildColor(userId) {
+  const used = new Set((await all(
+    `SELECT DISTINCT g.icon_color AS c FROM guilds g
+     JOIN guild_members m ON m.guild_id = g.id
+     WHERE m.user_id = ?`, userId
+  )).map((r) => r.c));
+  const free = AVATAR_COLORS.filter((c) => !used.has(c));
+  const pool = free.length ? free : AVATAR_COLORS;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 async function createGuild({ name, ownerId }) {
   const id = newId();
   await run(
     'INSERT INTO guilds (id, name, icon_color, owner_id, invite_code, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    id, name, pickColor(), ownerId, await freeInviteCode(), now()
+    id, name, await pickGuildColor(ownerId), ownerId, await freeInviteCode(), now()
   );
   await run('INSERT INTO guild_settings (guild_id) VALUES (?)', id);
   await addMember(id, ownerId, 'owner');
@@ -121,6 +138,12 @@ async function createGuild({ name, ownerId }) {
 const getGuild = (id) => get('SELECT * FROM guilds WHERE id = ?', id);
 const getGuildByInvite = (code) => get('SELECT * FROM guilds WHERE invite_code = ?', String(code).trim().toLowerCase());
 const deleteGuild = (id) => run('DELETE FROM guilds WHERE id = ?', id);
+
+async function updateGuildIcon(guildId, { iconColor, iconUrl } = {}) {
+  if (iconColor !== undefined) await run('UPDATE guilds SET icon_color = ? WHERE id = ?', iconColor, guildId);
+  if (iconUrl !== undefined) await run('UPDATE guilds SET icon_url = ? WHERE id = ?', iconUrl, guildId);
+  return getGuild(guildId);
+}
 
 const listGuildsOfUser = async (userId) =>
   (await all(
@@ -584,7 +607,7 @@ const listSubscriptions = (userId) => all('SELECT * FROM push_subscriptions WHER
 module.exports = {
   now, pickColor, publicUser, BOT_USER_ID,
   createUser, usernameTaken, getUser, getUserByEmail, getUserByGoogleSub, getUserByHandle, searchUsers, setStatus, updateProfile,
-  guildPayload, createGuild, getGuild, getGuildByInvite, deleteGuild, listGuildsOfUser,
+  guildPayload, createGuild, getGuild, getGuildByInvite, deleteGuild, updateGuildIcon, listGuildsOfUser,
   addMember, getMember, removeMember, memberCount, listMembers, memberPayload, findMemberByName,
   rank, ROLE_RANK, setRole, isBanned, banMember, unbanMember, listBans,
   channelPayload, createChannel, getChannel, listChannels, deleteChannel, renameChannel, findChannelByName,

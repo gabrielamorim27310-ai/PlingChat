@@ -366,6 +366,31 @@ router.patch('/guilds/:id/settings', auth.requireAuth, wrap(async (req, res) => 
   res.json({ settings });
 }));
 
+/** Foto/cor do servidor. */
+router.patch('/guilds/:id/icon', auth.requireAuth, wrap(async (req, res) => {
+  const guild = await store.getGuild(req.params.id);
+  if (!guild) throw new Error('Servidor não encontrado');
+  if ((await store.rank(guild.id, req.user.id)) < store.ROLE_RANK.admin) throw new Error('Sem permissao');
+
+  const { iconColor, iconUrl } = req.body || {};
+  let nextIconUrl;
+  if (iconUrl !== undefined) {
+    if (iconUrl === null) {
+      nextIconUrl = null; // remove a foto, volta pro icone de cor
+    } else if (typeof iconUrl === 'string' && /^data:image\/(png|jpe?g|webp|gif);base64,/.test(iconUrl)) {
+      if (iconUrl.length > 900_000) throw new Error('Imagem muito grande. Escolha uma foto menor.');
+      nextIconUrl = iconUrl;
+    } else {
+      throw new Error('Formato de imagem invalido');
+    }
+  }
+
+  const updated = await store.updateGuildIcon(guild.id, { iconColor, iconUrl: nextIconUrl });
+  const payload = store.guildPayload(updated);
+  req.app.locals.broadcastGuildInfo?.(guild.id, { name: payload.name, iconColor: payload.iconColor, iconUrl: payload.iconUrl });
+  res.json({ guild: payload });
+}));
+
 /** Log de auditoria: quem fez o que, quando. So admin/dono ve. */
 router.get('/guilds/:id/audit-log', auth.requireAuth, wrap(async (req, res) => {
   if ((await store.rank(req.params.id, req.user.id)) < store.ROLE_RANK.admin) throw new Error('Sem permissao');

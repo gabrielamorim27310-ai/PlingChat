@@ -150,6 +150,9 @@ function attachRealtime(server, app, { originAllowed = () => true } = {}) {
   app.locals.broadcastGuildDeleted = (guildId) =>
     io.to(guildRoom(guildId)).emit('guild:removed', { guildId });
 
+  app.locals.broadcastGuildInfo = (guildId, patch) =>
+    io.to(guildRoom(guildId)).emit('guild:info', { guildId, ...patch });
+
   app.locals.notifyFriends = async (userIds) => {
     for (const id of userIds) io.to(userRoom(id)).emit('friends:update', await store.listFriends(id));
   };

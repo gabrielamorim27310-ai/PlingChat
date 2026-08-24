@@ -507,6 +507,25 @@ button { background: none; border: 0; cursor: pointer; }
 .invite-embed-resolved.declined { color: var(--text-mute); }
 
 .typing { height: 22px; padding: 0 20px; font-size: 12px; color: var(--text-dim); }
+.call-waiting-banner {
+  display: flex; align-items: center; gap: 10px; margin: 0 16px 10px; padding: 10px 14px;
+  background: rgba(94,234,212,.12); border: 1px solid rgba(94,234,212,.35); border-radius: 10px;
+  color: var(--banner-info-text); font-size: 13px;
+}
+.call-waiting-banner .btn { margin-left: auto; padding: 6px 14px; font-size: 13px; }
+.call-waiting-dot {
+  width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex: none;
+  animation: call-waiting-pulse 1.5s ease-in-out infinite;
+}
+.channel.has-call .call-badge {
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--green); color: #06120f; flex: none; animation: call-waiting-pulse 1.5s ease-in-out infinite;
+}
+@keyframes call-waiting-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(94,234,212,.55); }
+  50% { box-shadow: 0 0 0 8px rgba(94,234,212,0); }
+}
+@media (prefers-reduced-motion: reduce) { .call-waiting-dot, .channel.has-call .call-badge { animation: none; } }
 
 /* ---------------------------------------------------------- composer --- */
 .composer { padding: 0 16px 20px; flex: none; }

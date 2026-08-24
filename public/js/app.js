@@ -670,6 +670,7 @@ function connectSocket() {
     state.voiceMembers.set(channelId, members);
     renderSidebar();
     renderStage();
+    renderCallWaitingBanner();
   });
 
   socket.on('music:state', ({ guildId, ...payload }) => {
@@ -793,12 +794,16 @@ function renderSidebar() {
 
     for (const dm of state.dms) {
       const unread = state.unread[dm.id] || 0;
+      const voiceHere = state.voiceMembers.get(dm.id) || [];
+      const waiting = voiceHere.length > 0 && !voiceHere.some((m) => m.user.id === state.me.id);
       body.append(el('button', {
-        class: `channel ${state.activeChannelId === dm.id ? 'active' : ''}`,
+        class: `channel ${state.activeChannelId === dm.id ? 'active' : ''} ${waiting ? 'has-call' : ''}`,
+        title: waiting ? `${voiceHere[0].user.username} está te esperando na chamada` : '',
         onclick: () => openChannel(dm.id)
       },
         avatarNode(dm.recipient, { size: 24 }),
         el('span', { class: 'name' }, dm.recipient?.username || 'Desconhecido'),
+        waiting ? el('span', { class: 'call-badge' }, icon('phone', 11)) : null,
         unread ? el('span', { class: `badge ${state.mentioned.has(dm.id) ? 'mentioned' : ''}` }, unread) : null));
     }
 
@@ -928,6 +933,7 @@ export async function openChannel(channelId) {
   renderRail();
   renderSidebar();
   renderMembers();
+  renderCallWaitingBanner();
 
   if (!state.messages.has(channelId)) {
     const { messages } = await api.get(`/channels/${channelId}/messages`);
@@ -935,6 +941,28 @@ export async function openChannel(channelId) {
   }
   renderMessages();
   $('#input').focus();
+}
+
+// Mostra um aviso fixo acima do composer quando a pessoa abre uma DM em que
+// alguém já está esperando na chamada (e ela ainda não entrou), para que
+// não dependa só do overlay "Chamando..." do lado de quem ligou.
+function renderCallWaitingBanner() {
+  const banner = $('#callWaitingBanner');
+  if (!banner) return;
+
+  const channel = channelById(state.activeChannelId);
+  const isDM = channel?.type === 'dm';
+  const already = voice?.connected && voice.channelId === state.activeChannelId;
+  const members = isDM ? (state.voiceMembers.get(state.activeChannelId) || []) : [];
+  const waitingMember = members.find((m) => m.user.id !== state.me.id);
+
+  if (!isDM || already || !waitingMember) {
+    banner.hidden = true;
+    return;
+  }
+
+  $('#callWaitingText').textContent = `${waitingMember.user.username} está te esperando na chamada`;
+  banner.hidden = false;
 }
 
 /* ======================================================== tela inicial == */
@@ -1350,6 +1378,7 @@ export async function joinVoice(channel, { video = false, ring = false } = {}) {
     if (ring) socket.emit('call:start', { channelId: channel.id, video });
     renderVoicePanel();
     renderStage();
+    renderCallWaitingBanner();
     toast(`Conectado em ${channel.type === 'dm' ? channel.recipient?.username : channel.name}`, 'ok');
   } catch (err) {
     toast(`Não foi possível conectar: ${err.message}`, 'err');
@@ -1360,6 +1389,7 @@ function leaveVoice() {
   voice.leave();
   renderVoicePanel();
   renderStage();
+  renderCallWaitingBanner();
 }
 
 function renderVoicePanel() {
@@ -1715,6 +1745,10 @@ function bindUI() {
   $('#btnVideoCall').addEventListener('click', () => {
     const channel = channelById(state.activeChannelId);
     if (channel) joinVoice(channel, { video: true, ring: true });
+  });
+  $('#callWaitingJoin').addEventListener('click', () => {
+    const channel = channelById(state.activeChannelId);
+    if (channel) joinVoice(channel);
   });
 
   $('#ringAccept').addEventListener('click', async () => {

@@ -755,7 +755,7 @@ function renderRail() {
     const button = el('button', {
       class: `rail-item ${state.activeGuildId === g.id ? 'active' : ''}`,
       title: g.name,
-      style: (state.activeGuildId === g.id || g.iconUrl) ? '' : `background:${g.iconColor}`,
+      style: `background:${g.iconColor}`,
       onclick: () => openGuild(g.id)
     }, g.iconUrl ? el('img', { src: g.iconUrl, alt: '' }) : el('span', {}, initials(g.name)), el('span', { class: 'rail-pill' }));
 

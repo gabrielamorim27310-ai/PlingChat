@@ -369,6 +369,16 @@ function attachRealtime(server, app, { originAllowed = () => true } = {}) {
         video: !!video,
         from: store.publicUser(socket.data.user)
       });
+      // Sem isso, quem esta com o app fechado (nao so sem foco) nunca fica
+      // sabendo que ligaram -- mensagem ja tinha isso, chamada nao tinha.
+      if (push.isEnabled() && !isOnline(other)) {
+        push.notify(other, {
+          title: `${socket.data.user.username} está ligando`,
+          body: video ? 'Chamada de vídeo' : 'Chamada de voz',
+          tag: `call:${channelId}`,
+          url: `/?canal=${channelId}`
+        }).catch(() => {});
+      }
       ack?.({ ok: true });
     });
 

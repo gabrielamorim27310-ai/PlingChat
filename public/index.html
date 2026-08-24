@@ -187,7 +187,13 @@
 
     <!-- palco de vídeo/tela -->
     <section class="stage" id="stage" hidden>
-      <div class="stage-grid" id="stageGrid"></div>
+      <div class="stage-grid" id="stageGrid">
+        <div class="stage-waiting" id="stageWaiting" hidden>
+          <span class="avatar big" id="stageWaitingAvatar"></span>
+          <strong id="stageWaitingName"></strong>
+          <span class="stage-waiting-status">Chamando…</span>
+        </div>
+      </div>
       <div class="stage-bar">
         <button class="pill-btn" id="stageMic"><span class="pill-icon"></span><span class="pill-label">Mudo</span></button>
         <button class="pill-btn" id="stageCam"><span class="pill-icon"></span><span class="pill-label">Câmera</span></button>

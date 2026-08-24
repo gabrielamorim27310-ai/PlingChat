@@ -1381,6 +1381,21 @@ function renderStage() {
   const tiles = voice.tiles(state.me);
   const seen = new Set();
 
+  // DM 1:1 e ainda ninguem alem de voce na chamada -- mostra "Chamando..."
+  // em vez do grid vazio, igual o Discord faz.
+  const waitingChannel = channelById(voice.channelId);
+  const waitingOverlay = $('#stageWaiting');
+  if (waitingOverlay) {
+    const waiting = waitingChannel?.type === 'dm' && tiles.length <= 1;
+    waitingOverlay.hidden = !waiting;
+    if (waiting) {
+      const other = waitingChannel.recipient;
+      $('#stageWaitingAvatar').replaceWith(Object.assign(
+        avatarNode(other, { size: 96, status: false }), { id: 'stageWaitingAvatar', className: 'avatar big' }));
+      $('#stageWaitingName').textContent = other?.username ?? '';
+    }
+  }
+
   for (const tile of tiles) {
     for (const [kind, stream] of [['cam', tile.video], ['screen', tile.screen]]) {
       const key = `${tile.key}:${kind}`;

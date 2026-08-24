@@ -22,6 +22,8 @@
   --yellow: #f0c264;
   --red: #ff7a7a;
   --pink: #e04fb0;
+  --banner-warn-text: #ffd591;
+  --banner-info-text: #a9f2e6;
   --radius: 10px;
   --rail-w: 74px;
   --side-w: 250px;
@@ -48,6 +50,10 @@
   --text-mute: #837f8f;
   --glass: rgba(20,10,30,.03);
   --glass-border: rgba(20,10,30,.08);
+  /* Os tons pastel dos banners (pensados pra fundo escuro) somem quase
+     invisíveis num fundo claro -- versão escura das mesmas cores aqui. */
+  --banner-warn-text: #8a5a12;
+  --banner-info-text: #0f766e;
 }
 :root[data-theme="auto"] {
   color-scheme: light dark;
@@ -65,6 +71,8 @@
     --text-mute: #837f8f;
     --glass: rgba(20,10,30,.03);
     --glass-border: rgba(20,10,30,.08);
+    --banner-warn-text: #8a5a12;
+    --banner-info-text: #0f766e;
   }
 }
 
@@ -134,12 +142,12 @@ button { background: none; border: 0; cursor: pointer; }
 .auth-forgot { margin-top: 12px; text-align: center; font-size: 13px; }
 .turnstile { margin-bottom: 14px; display: flex; justify-content: center; min-height: 0; }
 
-.verify-banner { background: rgba(250,166,26,.12); border-bottom: 1px solid rgba(250,166,26,.35); color: #ffd591; padding: 9px 16px; display: flex; align-items: center; gap: 12px; font-size: 13px; flex: none; }
-.verify-banner .link { color: #ffd591; text-decoration: underline; }
-.verify-banner .icon-btn { margin-left: auto; width: 26px; height: 26px; color: #ffd591; }
-.notif-banner { background: rgba(94,234,212,.12); border-bottom: 1px solid rgba(94,234,212,.35); color: #a9f2e6; padding: 9px 16px; display: flex; align-items: center; gap: 12px; font-size: 13px; flex: none; flex-wrap: wrap; }
-.notif-banner .link { color: #a9f2e6; text-decoration: underline; }
-.notif-banner .icon-btn { margin-left: auto; width: 26px; height: 26px; color: #a9f2e6; }
+.verify-banner { background: rgba(250,166,26,.12); border-bottom: 1px solid rgba(250,166,26,.35); color: var(--banner-warn-text); padding: 9px 16px; display: flex; align-items: center; gap: 12px; font-size: 13px; flex: none; }
+.verify-banner .link { color: var(--banner-warn-text); text-decoration: underline; }
+.verify-banner .icon-btn { margin-left: auto; width: 26px; height: 26px; color: var(--banner-warn-text); }
+.notif-banner { background: rgba(94,234,212,.12); border-bottom: 1px solid rgba(94,234,212,.35); color: var(--banner-info-text); padding: 9px 16px; display: flex; align-items: center; gap: 12px; font-size: 13px; flex: none; flex-wrap: wrap; }
+.notif-banner .link { color: var(--banner-info-text); text-decoration: underline; }
+.notif-banner .icon-btn { margin-left: auto; width: 26px; height: 26px; color: var(--banner-info-text); }
 
 .invite-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .invite-row code { background: var(--bg-0); padding: 4px 9px; border-radius: 6px; font-family: var(--font-mono); letter-spacing: .04em; }

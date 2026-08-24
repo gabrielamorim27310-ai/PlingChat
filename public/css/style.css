@@ -27,6 +27,13 @@
   --tint-danger-text: #ffb3b4;
   --tint-success-text: #9ae6b4;
   --tint-mention-text: #c7cbff;
+  /* Versoes de --green/--yellow/--red seguras como TEXTO (nao fundo) --
+     os pastéis originais são pensados pra ler em cima de fundo escuro; como
+     texto direto em cima do fundo claro eles quase somem. Por padrão (escuro)
+     são iguais aos originais; só ganham um tom mais forte no modo claro. */
+  --green-text: var(--green);
+  --yellow-text: var(--yellow);
+  --red-text: var(--red);
   --radius: 10px;
   --rail-w: 74px;
   --side-w: 250px;
@@ -60,6 +67,9 @@
   --tint-danger-text: #b91c1c;
   --tint-success-text: #15803d;
   --tint-mention-text: #4338ca;
+  --green-text: #0f766e;
+  --yellow-text: #8a5a12;
+  --red-text: #b91c1c;
 }
 :root[data-theme="auto"] {
   color-scheme: light dark;
@@ -82,6 +92,9 @@
     --tint-danger-text: #b91c1c;
     --tint-success-text: #15803d;
     --tint-mention-text: #4338ca;
+    --green-text: #0f766e;
+    --yellow-text: #8a5a12;
+    --red-text: #b91c1c;
   }
 }
 
@@ -264,7 +277,7 @@ button { background: none; border: 0; cursor: pointer; }
 .rail-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .rail-home.active { background: var(--brand-gradient); }
 .rail-glyph svg { width: 20px; height: 20px; }
-.rail-add { color: var(--green); }
+.rail-add { color: var(--green-text); }
 .rail-add:hover { background: var(--green); color: #fff; }
 .rail-sep { width: 22px; height: 1px; background: var(--line); border-radius: 2px; margin: 2px 0; }
 .rail-pill { position: absolute; left: -14px; width: 4px; height: 0; background: #fff; border-radius: 0 4px 4px 0; transition: height .18s cubic-bezier(.2,.8,.3,1); }
@@ -310,7 +323,7 @@ button { background: none; border: 0; cursor: pointer; }
 .channel .badge.mentioned { background: var(--yellow); color: #402c00; }
 .channel .del { opacity: 0; color: var(--text-mute); transition: opacity .12s, color .12s; }
 .channel:hover .del { opacity: 1; }
-.channel .del:hover { color: var(--red); }
+.channel .del:hover { color: var(--red-text); }
 
 .voice-members { padding: 2px 0 4px 26px; display: flex; flex-direction: column; gap: 4px; }
 .voice-member { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-dim); }
@@ -341,8 +354,8 @@ button { background: none; border: 0; cursor: pointer; }
 .voice-panel { background: var(--bg-2); border-top: 1px solid var(--line); padding: 9px 10px; display: flex; align-items: center; gap: 8px; }
 .voice-info { flex: 1; min-width: 0; cursor: pointer; }
 .voice-info:hover .voice-channel { color: var(--text); }
-.voice-status { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--green); }
-.voice-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 1.6s infinite; }
+.voice-status { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--green-text); }
+.voice-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green-text); animation: pulse 1.6s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 .voice-channel { font-size: 12px; color: var(--text-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .voice-actions { display: flex; gap: 2px; }
@@ -358,10 +371,10 @@ button { background: none; border: 0; cursor: pointer; }
 
 .icon-btn { width: 32px; height: 32px; border-radius: 6px; display: grid; place-items: center; color: var(--text-dim); font-size: 15px; }
 .icon-btn:hover { background: var(--bg-4); color: var(--text); }
-.icon-btn.off { color: var(--red); position: relative; }
-.icon-btn.off::after { content: ''; position: absolute; width: 22px; height: 2px; background: var(--red); transform: rotate(-45deg); border-radius: 2px; }
-.icon-btn.danger { color: var(--red); }
-.icon-btn.active { color: var(--green); background: rgba(59,165,93,.14); }
+.icon-btn.off { color: var(--red-text); position: relative; }
+.icon-btn.off::after { content: ''; position: absolute; width: 22px; height: 2px; background: var(--red-text); transform: rotate(-45deg); border-radius: 2px; }
+.icon-btn.danger { color: var(--red-text); }
+.icon-btn.active { color: var(--green-text); background: rgba(59,165,93,.14); }
 .icon-btn.send { color: var(--brand-2); }
 
 /* ------------------------------------------------------------- main ---- */
@@ -503,7 +516,7 @@ button { background: none; border: 0; cursor: pointer; }
 .embed-music audio { width: 100%; }
 .invite-embed-actions { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 .invite-embed-resolved { font-size: 13px; font-weight: 600; margin-top: 4px; }
-.invite-embed-resolved.accepted { color: var(--green); }
+.invite-embed-resolved.accepted { color: var(--green-text); }
 .invite-embed-resolved.declined { color: var(--text-mute); }
 
 .typing { height: 22px; padding: 0 20px; font-size: 12px; color: var(--text-dim); }
@@ -552,10 +565,10 @@ button { background: none; border: 0; cursor: pointer; }
 .member-row .sub { font-size: 11px; color: var(--text-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .member-row.offline { opacity: .45; }
 .role-tag { font-size: 10px; padding: 2px 7px; border-radius: 4px; font-weight: 700; margin-left: auto; text-transform: uppercase; letter-spacing: .03em; }
-.role-tag.role-owner { background: rgba(250,166,26,.16); color: var(--yellow); }
-.role-tag.role-admin { background: rgba(237,66,69,.16); color: var(--red); }
-.role-tag.role-mod { background: rgba(59,165,93,.16); color: var(--green); }
-.role-owner { background: rgba(250,166,26,.18); color: var(--yellow); }
+.role-tag.role-owner { background: rgba(250,166,26,.16); color: var(--yellow-text); }
+.role-tag.role-admin { background: rgba(237,66,69,.16); color: var(--red-text); }
+.role-tag.role-mod { background: rgba(59,165,93,.16); color: var(--green-text); }
+.role-owner { background: rgba(250,166,26,.18); color: var(--yellow-text); }
 .role-admin { background: rgba(237,66,69,.16); color: var(--tint-danger-text); }
 .role-mod { background: rgba(155,77,255,.16); color: var(--brand-2); }
 
@@ -607,6 +620,21 @@ button { background: none; border: 0; cursor: pointer; }
 .cmd code { background: var(--bg-0); padding: 2px 7px; border-radius: 5px; color: var(--brand-2); flex: none; align-self: flex-start; font-family: var(--font-mono); }
 .cmd span { color: var(--text-dim); }
 
+.voice-settings { display: flex; flex-direction: column; }
+.voice-settings-group { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.voice-settings-group .custom-select, .voice-settings-group .cam-preview { width: 100%; align-self: stretch; }
+.voice-settings-row { display: flex; gap: 8px; align-items: center; }
+.voice-settings-row .custom-select { flex: 1; }
+.mic-meter {
+  width: 100%; height: 6px; border-radius: 4px; background: var(--bg-4);
+  overflow: hidden;
+}
+.mic-meter-fill { height: 100%; width: 0%; background: var(--green-text); border-radius: 4px; }
+.cam-preview {
+  display: block; width: 100%; max-width: 320px; aspect-ratio: 16/9; margin-top: 8px;
+  border-radius: 8px; background: #000; object-fit: cover; transform: scaleX(-1);
+}
+
 .theme-picker { display: flex; gap: 8px; }
 .theme-option {
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;
@@ -627,7 +655,7 @@ button { background: none; border: 0; cursor: pointer; }
 .invite-friend-list { max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 .invite-friend-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; }
 .invite-friend-row .name { flex: 1; font-size: 14px; }
-.invite-friend-row.done { color: var(--green); font-size: 13px; padding: 8px 4px; }
+.invite-friend-row.done { color: var(--green-text); font-size: 13px; padding: 8px 4px; }
 .invite-box { display: flex; gap: 8px; }
 .invite-box input { flex: 1; background: var(--bg-0); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-family: var(--font-mono); color: var(--text); }
 

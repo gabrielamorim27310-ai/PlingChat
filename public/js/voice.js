@@ -10,6 +10,34 @@ const ICE_SERVERS = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
 ];
 
+// Dispositivo/processamento de áudio escolhidos ficam salvos localmente e
+// valem pra próxima chamada -- ninguém quer escolher o microfone de novo
+// toda vez que liga pra alguém.
+const DEVICE_KEYS = { audioInput: 'nexus.audioInputId', audioOutput: 'nexus.audioOutputId', videoInput: 'nexus.videoInputId' };
+const AUDIO_FX_KEYS = { echoCancellation: 'nexus.fxEcho', noiseSuppression: 'nexus.fxNoise', autoGainControl: 'nexus.fxGain' };
+
+const loadDeviceId = (kind) => { try { return localStorage.getItem(DEVICE_KEYS[kind]) || ''; } catch { return ''; } };
+const saveDeviceId = (kind, id) => {
+  try { id ? localStorage.setItem(DEVICE_KEYS[kind], id) : localStorage.removeItem(DEVICE_KEYS[kind]); } catch { /* ignora */ }
+};
+const loadAudioFx = (key) => { try { return localStorage.getItem(AUDIO_FX_KEYS[key]) !== '0'; } catch { return true; } };
+const saveAudioFx = (key, on) => { try { localStorage.setItem(AUDIO_FX_KEYS[key], on ? '1' : '0'); } catch { /* ignora */ } };
+
+/** Microfones, câmeras e saídas de áudio disponíveis no aparelho. */
+export async function listMediaDevices() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return {
+    mics: devices.filter((d) => d.kind === 'audioinput'),
+    speakers: devices.filter((d) => d.kind === 'audiooutput'),
+    cameras: devices.filter((d) => d.kind === 'videoinput')
+  };
+}
+
+/** Saída de áudio (alto-falante/fone) é configurável só onde o navegador
+ * suporta HTMLMediaElement.setSinkId -- hoje Chrome/Edge; Firefox e Safari
+ * ainda não. */
+export const canPickAudioOutput = () => typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype;
+
 export class VoiceClient {
   constructor(socket) {
     this.socket = socket;
@@ -27,7 +55,127 @@ export class VoiceClient {
     this.listeners = new Set();
     this.analysers = new Map();
 
+    this.deviceIds = {
+      audioInput: loadDeviceId('audioInput'),
+      audioOutput: loadDeviceId('audioOutput'),
+      videoInput: loadDeviceId('videoInput')
+    };
+    this.audioFx = {
+      echoCancellation: loadAudioFx('echoCancellation'),
+      noiseSuppression: loadAudioFx('noiseSuppression'),
+      autoGainControl: loadAudioFx('autoGainControl')
+    };
+
     this._bindSocket();
+  }
+
+  /* -------------------------------------------------------- dispositivos */
+
+  _micConstraints() {
+    const c = { ...this.audioFx };
+    if (this.deviceIds.audioInput) c.deviceId = { exact: this.deviceIds.audioInput };
+    return c;
+  }
+
+  _camConstraints() {
+    const c = { width: { ideal: 1280 }, height: { ideal: 720 } };
+    if (this.deviceIds.videoInput) c.deviceId = { exact: this.deviceIds.videoInput };
+    return c;
+  }
+
+  /** O dispositivo salvo pode ter sido desconectado (fone Bluetooth
+   * desligado, webcam desplugada) -- em vez de travar a chamada inteira,
+   * cai pro dispositivo padrão e limpa a escolha salva. */
+  async _getMicStream() {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio: this._micConstraints(), video: false });
+    } catch (err) {
+      if (err.name === 'OverconstrainedError' && this.deviceIds.audioInput) {
+        this.deviceIds.audioInput = '';
+        saveDeviceId('audioInput', '');
+        return navigator.mediaDevices.getUserMedia({ audio: this._micConstraints(), video: false });
+      }
+      throw err;
+    }
+  }
+
+  async _getCamStream() {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ video: this._camConstraints(), audio: false });
+    } catch (err) {
+      if (err.name === 'OverconstrainedError' && this.deviceIds.videoInput) {
+        this.deviceIds.videoInput = '';
+        saveDeviceId('videoInput', '');
+        return navigator.mediaDevices.getUserMedia({ video: this._camConstraints(), audio: false });
+      }
+      throw err;
+    }
+  }
+
+  /** Troca o microfone em uso -- se já tiver numa chamada, substitui a
+   * faixa de áudio ao vivo pra todo mundo, sem precisar renegociar nem
+   * reconectar (RTCRtpSender.replaceTrack). */
+  async setAudioInputDevice(deviceId) {
+    this.deviceIds.audioInput = deviceId || '';
+    saveDeviceId('audioInput', this.deviceIds.audioInput);
+    if (!this.micStream) { this._emit(); return; }
+
+    const oldStream = this.micStream;
+    const newStream = await this._getMicStream();
+    const newTrack = newStream.getAudioTracks()[0];
+    newTrack.enabled = !this.state.muted;
+
+    for (const peer of this.peers.values()) {
+      const sender = peer.pc.getSenders().find((s) => s.track === oldStream.getAudioTracks()[0]);
+      if (sender) sender.replaceTrack(newTrack);
+    }
+
+    this.analysers.get('self')?.close?.();
+    this.analysers.delete('self');
+    this.micStream = newStream;
+    this._stopStream(oldStream);
+    this._watchSpeaking('self', this.micStream);
+    this._emit();
+  }
+
+  /** Troca a câmera em uso ao vivo, mesmo padrão do microfone. */
+  async setVideoInputDevice(deviceId) {
+    this.deviceIds.videoInput = deviceId || '';
+    saveDeviceId('videoInput', this.deviceIds.videoInput);
+    if (!this.camStream) { this._emit(); return; }
+
+    const oldTrack = this.camStream.getVideoTracks()[0];
+    const newStream = await this._getCamStream();
+    const newTrack = newStream.getVideoTracks()[0];
+    newTrack.addEventListener('ended', () => this.setCamera(false));
+
+    for (const peer of this.peers.values()) {
+      const sender = peer.pc.getSenders().find((s) => s.track === oldTrack);
+      if (sender) sender.replaceTrack(newTrack);
+    }
+
+    this.camStream = newStream;
+    oldTrack.stop();
+    this._emit();
+  }
+
+  /** Saída de áudio (pra onde toca a voz de quem tá na call) -- só some
+   * efeito nos elementos <audio>/<video> que app.js aplica via setSinkId;
+   * aqui só guarda a escolha e avisa quem tá ouvindo pra reaplicar. */
+  setAudioOutputDevice(deviceId) {
+    this.deviceIds.audioOutput = deviceId || '';
+    saveDeviceId('audioOutput', this.deviceIds.audioOutput);
+    this._emit();
+  }
+
+  /** Liga/desliga cancelamento de eco, supressão de ruído ou ganho
+   * automático -- vale a partir do próximo microfone pego (troca de
+   * dispositivo ou próxima chamada). */
+  setAudioFx(key, on) {
+    if (!(key in this.audioFx)) return;
+    this.audioFx[key] = on;
+    saveAudioFx(key, on);
+    this._emit();
   }
 
   /* ------------------------------------------------------------- eventos */
@@ -77,10 +225,7 @@ export class VoiceClient {
     if (this.channelId === channelId) return;
     if (this.channelId) this.leave();
 
-    this.micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: false
-    });
+    this.micStream = await this._getMicStream();
     this._watchSpeaking('self', this.micStream);
 
     const response = await new Promise((resolve) =>
@@ -141,9 +286,7 @@ export class VoiceClient {
 
   async setCamera(on) {
     if (on && !this.camStream) {
-      this.camStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false
-      });
+      this.camStream = await this._getCamStream();
       const track = this.camStream.getVideoTracks()[0];
       track.addEventListener('ended', () => this.setCamera(false));
       for (const peer of this.peers.values()) peer.pc.addTrack(track, this.camStream);

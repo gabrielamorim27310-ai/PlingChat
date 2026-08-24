@@ -1,20 +1,32 @@
 import { api } from './api.js';
 import { $, el, icon, avatarNode, escapeHtml, initials } from './util.js';
-import { state, socket, toast, openGuild, openHome, startDM, refresh, appConfig, setupPush, applyTheme, getTheme } from './app.js';
+import {
+  state, socket, toast, openGuild, openHome, startDM, refresh, appConfig, setupPush, applyTheme, getTheme,
+  voice, applyAudioOutput
+} from './app.js';
 import {
   soundsEnabled, setSoundsEnabled, osNotificationsEnabled, enableOsNotifications, disableOsNotifications,
   isIOS, isMac, isStandaloneApp
 } from './notify.js';
+import { listMediaDevices, canPickAudioOutput } from './voice.js';
 
 /* ============================================================ básico ==== */
 
 export function openModal(node) {
   const modal = $('#modal');
+  // Trocar de modal direto (ex.: "Meu perfil" -> "Meus convites") também
+  // descarta o anterior sem passar por closeModal() -- roda a limpeza dele
+  // aqui também, senão um teste de microfone/câmera ficaria aberto.
+  modal.firstElementChild?.__modalCleanup?.();
   modal.replaceChildren(node);
   $('#modalBackdrop').hidden = false;
 }
 
 export function closeModal() {
+  // Alguns modais (ex.: teste de microfone/câmera em "Voz e vídeo") deixam
+  // stream aberta enquanto estão na tela -- sem isso o LED da câmera
+  // continuaria aceso depois de fechar.
+  $('#modal').firstElementChild?.__modalCleanup?.();
   $('#modalBackdrop').hidden = true;
   $('#modal').replaceChildren();
 }
@@ -63,21 +75,33 @@ const switchRow = (label, description, value, onChange) => {
  * `options`: [{ value, label, dot? }]. Devolve um nó com `.value`
  * get/set, pra continuar dropando no lugar de um <select> comum.
  */
-function customSelect(options, initialValue) {
+function customSelect(options, initialValue, onChange) {
+  let opts = options;
   let current = initialValue;
   const label = el('span', { class: 'custom-select-label' });
   const btn = el('button', { type: 'button', class: 'custom-select-btn' });
-  const panel = el('div', { class: 'custom-select-panel', hidden: true },
-    options.map((opt) => el('button', {
-      type: 'button', class: 'custom-select-option',
-      onclick: () => { current = opt.value; renderBtn(); close(); }
-    }, opt.dot ? el('span', { class: 'status-dot', style: `background:${opt.dot}` }) : null, el('span', {}, opt.label))));
+  const panel = el('div', { class: 'custom-select-panel', hidden: true });
 
   const close = () => { panel.hidden = true; };
+  const pick = (value) => {
+    current = value;
+    renderBtn();
+    close();
+    onChange?.(value);
+  };
+  const renderPanel = () => {
+    // el() já filtra filhos null -- passar direto pro replaceChildren nativo
+    // (sem o el()) não filtra, e um `null` solto vira o texto "null" na tela.
+    panel.replaceChildren(...opts.map((opt) => el('button', {
+      type: 'button', class: 'custom-select-option',
+      onclick: () => pick(opt.value)
+    }, opt.dot ? el('span', { class: 'status-dot', style: `background:${opt.dot}` }) : null, el('span', {}, opt.label))));
+  };
   const renderBtn = () => {
-    const opt = options.find((o) => o.value === current) ?? options[0];
-    label.textContent = opt.label;
-    btn.replaceChildren(opt.dot ? el('span', { class: 'status-dot', style: `background:${opt.dot}` }) : null, label, icon('chevron-down', 15));
+    const opt = opts.find((o) => o.value === current) ?? opts[0];
+    label.textContent = opt?.label ?? '';
+    const dot = opt?.dot ? el('span', { class: 'status-dot', style: `background:${opt.dot}` }) : null;
+    btn.replaceChildren(...[dot, label, icon('chevron-down', 15)].filter(Boolean));
   };
 
   const wrap = el('div', { class: 'custom-select' }, btn, panel);
@@ -87,8 +111,17 @@ function customSelect(options, initialValue) {
   });
   document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) close(); });
 
+  renderPanel();
   renderBtn();
   Object.defineProperty(wrap, 'value', { get: () => current, set: (v) => { current = v; renderBtn(); } });
+  // Pra listas que só se conhecem depois de um await (dispositivos de
+  // áudio/vídeo, por exemplo) -- troca as opções sem recriar o dropdown.
+  wrap.setOptions = (newOptions, newValue) => {
+    opts = newOptions;
+    if (newValue !== undefined) current = newValue;
+    renderPanel();
+    renderBtn();
+  };
   return wrap;
 }
 
@@ -880,6 +913,158 @@ function photoEditor(file) {
   });
 }
 
+/**
+ * Escolha de microfone/câmera/saída de áudio -- tudo dentro do próprio site
+ * em vez do seletor nativo do navegador. Devolve { node, cleanup }: quem
+ * abrir precisa chamar cleanup() ao fechar o modal, senão o teste de
+ * microfone/câmera fica com o dispositivo aberto pra sempre.
+ */
+function voiceSettings() {
+  const supportsOutput = canPickAudioOutput();
+
+  const micSelect = customSelect([{ value: '', label: 'Carregando…' }], '', (id) => {
+    voice.setAudioInputDevice(id).catch((err) => toast(`Não foi possível trocar o microfone: ${err.message}`, 'err'));
+  });
+  const camSelect = customSelect([{ value: '', label: 'Carregando…' }], '', (id) => {
+    voice.setVideoInputDevice(id).catch((err) => toast(`Não foi possível trocar a câmera: ${err.message}`, 'err'));
+    if (camPreviewStream) startCamPreview();
+  });
+  const speakerSelect = supportsOutput
+    ? customSelect([{ value: '', label: 'Carregando…' }], '', (id) => voice.setAudioOutputDevice(id))
+    : null;
+
+  /* ---- teste de microfone: medidor de nível ao vivo ---- */
+  const meterFill = el('div', { class: 'mic-meter-fill' });
+  const micTestBtn = el('button', { type: 'button', class: 'btn btn-ghost' }, 'Testar microfone');
+  let micTestStream = null, micTestCtx = null, micTestRaf = null;
+
+  const stopMicTest = () => {
+    if (micTestRaf) cancelAnimationFrame(micTestRaf);
+    micTestRaf = null;
+    micTestCtx?.close?.();
+    micTestCtx = null;
+    for (const t of micTestStream?.getTracks() || []) t.stop();
+    micTestStream = null;
+    meterFill.style.width = '0%';
+    micTestBtn.textContent = 'Testar microfone';
+  };
+
+  const startMicTest = async () => {
+    stopMicTest();
+    try {
+      const constraints = { ...voice.audioFx };
+      if (micSelect.value) constraints.deviceId = { exact: micSelect.value };
+      micTestStream = await navigator.mediaDevices.getUserMedia({ audio: constraints, video: false });
+    } catch {
+      toast('Não foi possível acessar o microfone.', 'err');
+      return;
+    }
+    micTestBtn.textContent = 'Parar teste';
+    micTestCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = micTestCtx.createMediaStreamSource(micTestStream);
+    const analyser = micTestCtx.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const loop = () => {
+      analyser.getByteFrequencyData(data);
+      const level = data.reduce((a, b) => a + b, 0) / data.length;
+      meterFill.style.width = `${Math.min(100, Math.round((level / 90) * 100))}%`;
+      micTestRaf = requestAnimationFrame(loop);
+    };
+    loop();
+  };
+
+  micTestBtn.addEventListener('click', () => { micTestStream ? stopMicTest() : startMicTest(); });
+
+  /* ---- pré-visualização de câmera (só quando pedido) ---- */
+  const camPreview = el('video', { autoplay: true, playsInline: true, muted: true, class: 'cam-preview', hidden: true });
+  const camPreviewBtn = el('button', { type: 'button', class: 'btn btn-ghost' }, 'Visualizar câmera');
+  let camPreviewStream = null;
+
+  const stopCamPreview = () => {
+    for (const t of camPreviewStream?.getTracks() || []) t.stop();
+    camPreviewStream = null;
+    camPreview.srcObject = null;
+    camPreview.hidden = true;
+    camPreviewBtn.textContent = 'Visualizar câmera';
+  };
+
+  const startCamPreview = async () => {
+    try {
+      const constraints = { width: { ideal: 640 }, height: { ideal: 360 } };
+      if (camSelect.value) constraints.deviceId = { exact: camSelect.value };
+      const stream = await navigator.mediaDevices.getUserMedia({ video: constraints, audio: false });
+      for (const t of camPreviewStream?.getTracks() || []) t.stop();
+      camPreviewStream = stream;
+      camPreview.srcObject = stream;
+      camPreview.hidden = false;
+      camPreviewBtn.textContent = 'Parar visualização';
+    } catch {
+      toast('Não foi possível acessar a câmera.', 'err');
+    }
+  };
+
+  camPreviewBtn.addEventListener('click', () => { camPreviewStream ? stopCamPreview() : startCamPreview(); });
+
+  /* ---- teste de saída de áudio ---- */
+  const speakerTestBtn = supportsOutput ? el('button', {
+    type: 'button', class: 'btn btn-ghost',
+    onclick: () => {
+      const audio = new Audio('/sounds/pling.wav');
+      applyAudioOutput(audio);
+      audio.play().catch(() => toast('Não foi possível tocar o som de teste.', 'err'));
+    }
+  }, 'Testar') : null;
+
+  /* ---- carrega a lista real de dispositivos ---- */
+  async function loadDevices() {
+    try {
+      const { mics, speakers, cameras } = await listMediaDevices();
+      micSelect.setOptions(
+        mics.length ? mics.map((d, i) => ({ value: d.deviceId, label: d.label || `Microfone ${i + 1}` }))
+          : [{ value: '', label: 'Nenhum microfone encontrado' }],
+        voice.deviceIds.audioInput || mics[0]?.deviceId || '');
+      camSelect.setOptions(
+        cameras.length ? cameras.map((d, i) => ({ value: d.deviceId, label: d.label || `Câmera ${i + 1}` }))
+          : [{ value: '', label: 'Nenhuma câmera encontrada' }],
+        voice.deviceIds.videoInput || cameras[0]?.deviceId || '');
+      if (speakerSelect) {
+        speakerSelect.setOptions(
+          speakers.length ? speakers.map((d, i) => ({ value: d.deviceId, label: d.label || `Saída ${i + 1}` }))
+            : [{ value: '', label: 'Padrão do sistema' }],
+          voice.deviceIds.audioOutput || speakers[0]?.deviceId || '');
+      }
+    } catch {
+      toast('Não foi possível listar os dispositivos de áudio/vídeo.', 'err');
+    }
+  }
+  loadDevices();
+  navigator.mediaDevices.addEventListener?.('devicechange', loadDevices);
+
+  const fxToggle = (key, label, desc) =>
+    switchRow(label, desc, voice.audioFx[key], (on) => voice.setAudioFx(key, on));
+
+  const node = el('div', { class: 'voice-settings' },
+    field('Microfone', el('div', { class: 'voice-settings-group' }, micSelect, el('div', { class: 'mic-meter' }, meterFill), micTestBtn)),
+    field('Câmera', el('div', { class: 'voice-settings-group' }, camSelect, camPreviewBtn, camPreview)),
+    supportsOutput
+      ? field('Saída de áudio', el('div', { class: 'voice-settings-row' }, speakerSelect, speakerTestBtn))
+      : field('Saída de áudio', el('p', { style: 'font-size:12px;color:var(--text-mute);margin:0' },
+          'Escolha de saída não é suportada neste navegador -- usa o padrão do sistema.')),
+    fxToggle('echoCancellation', 'Cancelamento de eco', 'Evita que sua própria voz volte pelo microfone.'),
+    fxToggle('noiseSuppression', 'Supressão de ruído', 'Reduz ruído de fundo constante.'),
+    fxToggle('autoGainControl', 'Ganho automático', 'Ajusta o volume do microfone sozinho.'));
+
+  const cleanup = () => {
+    stopMicTest();
+    stopCamPreview();
+    navigator.mediaDevices.removeEventListener?.('devicechange', loadDevices);
+  };
+
+  return { node, cleanup };
+}
+
 /** Sons de "pling" + notificações do sistema com a aba aberta em segundo plano. */
 function notifSettings() {
   const soundToggle = switchRow(
@@ -1045,7 +1230,9 @@ function userSettings() {
     }
   };
 
-  return shell({
+  const voicePanel = voiceSettings();
+
+  const root = shell({
     title: 'Meu perfil',
     subtitle: `${state.me.username}#${state.me.tag}`,
     body: el('div', {},
@@ -1071,7 +1258,9 @@ function userSettings() {
         class: 'btn btn-ghost btn-block',
         style: 'margin-top:6px',
         onclick: setupPush
-      }, icon('bell', 15), Notification?.permission === 'granted' ? ' Notificações push ativadas' : ' Ativar notificações push (app fechado)') : null),
+      }, icon('bell', 15), Notification?.permission === 'granted' ? ' Notificações push ativadas' : ' Ativar notificações push (app fechado)') : null,
+      el('h3', { style: 'font-size:13px;margin:22px 0 4px;color:var(--text-mute);text-transform:uppercase;letter-spacing:.06em' }, 'Voz e vídeo'),
+      voicePanel.node),
     foot: [
       el('button', {
         class: 'btn btn-danger',
@@ -1081,6 +1270,8 @@ function userSettings() {
       el('button', { class: 'btn btn-primary', onclick: save }, 'Salvar')
     ]
   });
+  root.__modalCleanup = voicePanel.cleanup;
+  return root;
 }
 
 function addFriend() {

@@ -946,6 +946,15 @@ export async function openChannel(channelId) {
 // Mostra um aviso fixo acima do composer quando a pessoa abre uma DM em que
 // alguém já está esperando na chamada (e ela ainda não entrou), para que
 // não dependa só do overlay "Chamando..." do lado de quem ligou.
+// Alguem (que nao seja eu) ja esta na sala de voz desse canal, esperando?
+// Usado tanto pelo aviso fixo quanto pelos botoes de ligar do cabeçalho --
+// se a pessoa ja esta la esperando, não faz sentido "ligar" (tocar) de novo,
+// é só entrar direto.
+function channelHasWaitingCall(channelId) {
+  const members = state.voiceMembers.get(channelId) || [];
+  return members.find((m) => m.user.id !== state.me.id) || null;
+}
+
 function renderCallWaitingBanner() {
   const banner = $('#callWaitingBanner');
   if (!banner) return;
@@ -953,8 +962,7 @@ function renderCallWaitingBanner() {
   const channel = channelById(state.activeChannelId);
   const isDM = channel?.type === 'dm';
   const already = voice?.connected && voice.channelId === state.activeChannelId;
-  const members = isDM ? (state.voiceMembers.get(state.activeChannelId) || []) : [];
-  const waitingMember = members.find((m) => m.user.id !== state.me.id);
+  const waitingMember = isDM ? channelHasWaitingCall(state.activeChannelId) : null;
 
   if (!isDM || already || !waitingMember) {
     banner.hidden = true;
@@ -1449,6 +1457,7 @@ function renderStage() {
       }
       const video = node.querySelector('video');
       if (video.srcObject !== stream) video.srcObject = stream;
+      if (!tile.self) applyAudioOutput(video);
       node.classList.toggle('speaking', !!tile.speaking && kind === 'cam');
     }
 
@@ -1502,6 +1511,15 @@ function renderStage() {
   $('#stageFullscreen').hidden = !anyScreenShared && !document.fullscreenElement;
 }
 
+/** Aplica a saída de áudio escolhida (Configurações → Voz e vídeo) num
+ * elemento <audio>/<video> -- só existe suporte real no Chrome/Edge; nos
+ * outros o navegador ignora e toca no dispositivo padrão do sistema mesmo. */
+export function applyAudioOutput(mediaEl) {
+  const sinkId = voice?.deviceIds?.audioOutput;
+  if (!sinkId || typeof mediaEl.setSinkId !== 'function') return;
+  mediaEl.setSinkId(sinkId).catch(() => { /* dispositivo pode ter sumido -- ignora */ });
+}
+
 /** Reproduz o áudio remoto fora da grade (funciona mesmo sem vídeo). */
 function syncAudio() {
   const sink = $('#audioSink');
@@ -1521,6 +1539,7 @@ function syncAudio() {
     }
     if (audio.srcObject !== stream) audio.srcObject = stream;
     audio.muted = !!voice.state.deafened;
+    applyAudioOutput(audio);
     audio.play?.().catch(() => { /* aguarda gesto do usuário */ });
   }
 
@@ -1740,11 +1759,11 @@ function bindUI() {
 
   $('#btnCall').addEventListener('click', () => {
     const channel = channelById(state.activeChannelId);
-    if (channel) joinVoice(channel, { ring: true });
+    if (channel) joinVoice(channel, { ring: !channelHasWaitingCall(channel.id) });
   });
   $('#btnVideoCall').addEventListener('click', () => {
     const channel = channelById(state.activeChannelId);
-    if (channel) joinVoice(channel, { video: true, ring: true });
+    if (channel) joinVoice(channel, { video: true, ring: !channelHasWaitingCall(channel.id) });
   });
   $('#callWaitingJoin').addEventListener('click', () => {
     const channel = channelById(state.activeChannelId);

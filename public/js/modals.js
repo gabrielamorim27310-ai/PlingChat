@@ -57,6 +57,41 @@ const switchRow = (label, description, value, onChange) => {
     toggle);
 };
 
+/**
+ * Substitui um <select> nativo -- o menu aberto dele usa o estilo do
+ * sistema operacional (aquele azul do Windows), que o CSS não controla.
+ * `options`: [{ value, label, dot? }]. Devolve um nó com `.value`
+ * get/set, pra continuar dropando no lugar de um <select> comum.
+ */
+function customSelect(options, initialValue) {
+  let current = initialValue;
+  const label = el('span', { class: 'custom-select-label' });
+  const btn = el('button', { type: 'button', class: 'custom-select-btn' });
+  const panel = el('div', { class: 'custom-select-panel', hidden: true },
+    options.map((opt) => el('button', {
+      type: 'button', class: 'custom-select-option',
+      onclick: () => { current = opt.value; renderBtn(); close(); }
+    }, opt.dot ? el('span', { class: 'status-dot', style: `background:${opt.dot}` }) : null, el('span', {}, opt.label))));
+
+  const close = () => { panel.hidden = true; };
+  const renderBtn = () => {
+    const opt = options.find((o) => o.value === current) ?? options[0];
+    label.textContent = opt.label;
+    btn.replaceChildren(opt.dot ? el('span', { class: 'status-dot', style: `background:${opt.dot}` }) : null, label, icon('chevron-down', 15));
+  };
+
+  const wrap = el('div', { class: 'custom-select' }, btn, panel);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    panel.hidden = !panel.hidden;
+  });
+  document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) close(); });
+
+  renderBtn();
+  Object.defineProperty(wrap, 'value', { get: () => current, set: (v) => { current = v; renderBtn(); } });
+  return wrap;
+}
+
 /* =========================================================== servidor === */
 
 /** Entrada única pra criar OU entrar num servidor — antes eram dois botões separados. */
@@ -967,12 +1002,12 @@ function userSettings() {
       return dot;
     }));
 
-  const statusSelect = el('select', {},
-    el('option', { value: 'online' }, '🟢 Online'),
-    el('option', { value: 'idle' }, '🟡 Ausente'),
-    el('option', { value: 'dnd' }, '🔴 Não perturbe'),
-    el('option', { value: 'invisible' }, '⚫ Invisível'));
-  statusSelect.value = state.me.status === 'offline' ? 'online' : state.me.status;
+  const statusSelect = customSelect([
+    { value: 'online', label: 'Online', dot: 'var(--green)' },
+    { value: 'idle', label: 'Ausente', dot: 'var(--yellow)' },
+    { value: 'dnd', label: 'Não perturbe', dot: 'var(--red)' },
+    { value: 'invisible', label: 'Invisível', dot: 'var(--text-mute)' }
+  ], state.me.status === 'offline' ? 'online' : state.me.status);
 
   const themeOption = (mode, name, label) => {
     const btn = el('button', {

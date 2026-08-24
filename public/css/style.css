@@ -146,6 +146,28 @@ button { background: none; border: 0; cursor: pointer; }
 .field input:focus, .field textarea:focus, .field select:focus {
   border-color: rgba(155,77,255,.5); box-shadow: 0 0 0 3px rgba(155,77,255,.14);
 }
+
+/* select customizado -- o <select> nativo abre com o menu do sistema
+   operacional (aquele azul do Windows), sem jeito de estilizar direito. */
+.custom-select { position: relative; }
+.custom-select-btn {
+  width: 100%; display: flex; align-items: center; gap: 9px; padding: 11px 12px;
+  background: var(--glass); border: 1px solid var(--line); border-radius: 11px; color: var(--text);
+}
+.custom-select-btn:hover { border-color: rgba(155,77,255,.4); }
+.custom-select-btn .custom-select-label { flex: 1; text-align: left; }
+.custom-select-btn .icon { color: var(--text-mute); }
+.custom-select-panel {
+  position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; right: 0;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; padding: 6px;
+  box-shadow: 0 16px 40px rgba(0,0,0,.4);
+}
+.custom-select-option {
+  display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 10px;
+  border-radius: 8px; text-align: left; color: var(--text-dim); transition: background .12s, color .12s;
+}
+.custom-select-option:hover { background: var(--bg-3); color: var(--text); }
+.status-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .auth-error { background: rgba(237,66,69,.12); border: 1px solid rgba(237,66,69,.4); color: var(--tint-danger-text); padding: 9px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
 .auth-ok { background: rgba(59,165,93,.12); border: 1px solid rgba(59,165,93,.4); color: var(--tint-success-text); padding: 9px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
 .auth-forgot { margin-top: 12px; text-align: center; font-size: 13px; }

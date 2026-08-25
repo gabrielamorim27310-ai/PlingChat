@@ -103,7 +103,8 @@ const presets = {
   friend: { name: 'friend', windowMs: HOUR, max: 30, message: 'Muitos pedidos de amizade seguidos. Vá com calma.' },
   guild: { name: 'guild', windowMs: HOUR, max: 8, message: 'Você criou servidores demais em pouco tempo.' },
   invite: { name: 'invite', windowMs: HOUR, max: 20 },
-  dm: { name: 'dm', windowMs: HOUR, max: 60 }
+  dm: { name: 'dm', windowMs: HOUR, max: 60 },
+  contacts: { name: 'contacts', windowMs: HOUR, max: 10, message: 'Muitas tentativas seguidas. Tente de novo mais tarde.' }
 };
 
 module.exports = { limit, allow, reset, presets, clientIp };

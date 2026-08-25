@@ -74,6 +74,20 @@ async function searchUsers(query, limit = 20) {
   return (await all('SELECT * FROM users WHERE username LIKE ? AND is_bot = 0 LIMIT ?', q, limit)).map(publicUser);
 }
 
+/** Cruza e-mails (ex.: da agenda de contatos do celular) com contas que já
+ * existem -- usado por "adicionar amigos dos contatos". `excludeUserId`
+ * fica de fora (não faz sentido "descobrir" a própria conta). */
+async function findUsersByEmails(emails, excludeUserId) {
+  const cleaned = [...new Set(emails.map((e) => String(e || '').trim().toLowerCase()).filter(Boolean))].slice(0, 500);
+  if (!cleaned.length) return [];
+  const placeholders = cleaned.map(() => '?').join(',');
+  const rows = await all(
+    `SELECT * FROM users WHERE email IN (${placeholders}) AND id != ? AND is_bot = 0`,
+    ...cleaned, excludeUserId
+  );
+  return rows.map(publicUser);
+}
+
 const setStatus = (userId, status) => run('UPDATE users SET status = ? WHERE id = ?', status, userId);
 
 async function updateProfile(userId, patch) {
@@ -617,7 +631,7 @@ const listSubscriptions = (userId) => all('SELECT * FROM push_subscriptions WHER
 
 module.exports = {
   now, pickColor, publicUser, BOT_USER_ID,
-  createUser, usernameTaken, getUser, getUserByEmail, getUserByGoogleSub, getUserByHandle, searchUsers, setStatus, updateProfile,
+  createUser, usernameTaken, getUser, getUserByEmail, getUserByGoogleSub, getUserByHandle, searchUsers, findUsersByEmails, setStatus, updateProfile,
   guildPayload, createGuild, getGuild, getGuildByInvite, deleteGuild, updateGuildIcon, listGuildsOfUser,
   addMember, getMember, removeMember, memberCount, listMembers, memberPayload, findMemberByName,
   rank, ROLE_RANK, setRole, isBanned, banMember, unbanMember, listBans,

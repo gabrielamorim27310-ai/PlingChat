@@ -1324,10 +1324,16 @@ function userSettings() {
   return root;
 }
 
-function addFriend() {
-  const input = el('input', { type: 'text', placeholder: 'usuario#0000' });
-  const results = el('div', { style: 'margin-top:14px' });
+/** Linha de resultado padrão (busca por nome ou contato encontrado) --
+ * `trailing` é o que fica à direita (botão de adicionar, "já amigos" etc). */
+const friendResultRow = (user, trailing) => el('div', { class: 'friend-row' },
+  avatarNode(user, { size: 32 }),
+  el('div', { class: 'meta' },
+    el('div', { class: 'nm' }, `${user.username}#${user.tag}`),
+    el('div', { class: 'sub' }, user.customStatus || '')),
+  trailing);
 
+function addFriend() {
   const send = async (handle) => {
     try {
       const data = await api.post('/friends/request', { handle });
@@ -1341,6 +1347,10 @@ function addFriend() {
     }
   };
 
+  /* ---- aba "Buscar" -- nome de usuário completo, com tag ---- */
+  const input = el('input', { type: 'text', placeholder: 'usuario#0000' });
+  const results = el('div', { style: 'margin-top:14px' });
+
   let timer;
   input.addEventListener('input', () => {
     clearTimeout(timer);
@@ -1348,25 +1358,88 @@ function addFriend() {
     if (query.length < 2) return results.replaceChildren();
     timer = setTimeout(async () => {
       const { users } = await api.get(`/users/search?q=${encodeURIComponent(query)}`);
-      results.replaceChildren(...users.map((user) => el('div', { class: 'friend-row' },
-        avatarNode(user, { size: 32 }),
-        el('div', { class: 'meta' },
-          el('div', { class: 'nm' }, `${user.username}#${user.tag}`),
-          el('div', { class: 'sub' }, user.customStatus || '')),
-        el('button', { class: 'btn btn-primary', onclick: () => send(user.handle) }, 'Adicionar'))));
+      results.replaceChildren(...users.map((user) =>
+        friendResultRow(user, el('button', { class: 'btn btn-primary', onclick: () => send(user.handle) }, 'Adicionar'))));
     }, 250);
   });
-
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); send(input.value.trim()); }
   });
+
+  const searchBody = el('div', {},
+    field('Nome de usuário completo, com a tag de 4 dígitos', input),
+    results,
+    el('button', {
+      class: 'btn btn-primary btn-block', style: 'margin-top:10px',
+      onclick: () => send(input.value.trim())
+    }, 'Enviar pedido'));
+
+  /* ---- aba "Contatos do celular" -- só existe no Chrome Android hoje ---- */
+  const supportsContacts = 'contacts' in navigator && 'ContactsManager' in window;
+  const contactsStatus = el('p', { style: 'font-size:13px;color:var(--text-mute);margin-top:10px' },
+    'Escolha contatos com e-mail salvo pra ver quem já usa o PlingChat.');
+  const contactsResults = el('div', { style: 'margin-top:10px' });
+
+  const pendingIds = () => new Set([...state.friends.friends, ...state.friends.outgoing].map((f) => f.id));
+
+  const renderContactMatches = (users) => {
+    contactsResults.replaceChildren();
+    if (!users.length) {
+      contactsStatus.textContent = 'Nenhum desses contatos usa o PlingChat ainda.';
+      return;
+    }
+    const pending = pendingIds();
+    contactsStatus.textContent = `${users.length} ${users.length === 1 ? 'contato já está' : 'contatos já estão'} no PlingChat:`;
+    contactsResults.append(...users.map((user) => friendResultRow(user,
+      pending.has(user.id)
+        ? el('span', { style: 'font-size:12px;color:var(--text-mute)' }, 'Já enviado')
+        : el('button', { class: 'btn btn-primary', onclick: () => send(user.handle) }, 'Adicionar'))));
+  };
+
+  const pickContacts = async () => {
+    try {
+      const picked = await navigator.contacts.select(['email'], { multiple: true });
+      const emails = [...new Set(picked.flatMap((c) => c.email || []))];
+      if (!emails.length) { contactsStatus.textContent = 'Nenhum e-mail nos contatos escolhidos.'; return; }
+      contactsStatus.textContent = 'Procurando...';
+      const { users } = await api.post('/friends/match-contacts', { emails });
+      renderContactMatches(users);
+    } catch (err) {
+      if (err?.name === 'AbortError') return; // cancelou o seletor -- nao é erro
+      toast(err.message || 'Não foi possível acessar os contatos.', 'err');
+    }
+  };
+
+  const contactsBody = supportsContacts
+    ? el('div', {},
+        el('button', {
+          type: 'button', class: 'btn btn-ghost btn-block', onclick: pickContacts
+        }, icon('user-plus', 15), ' Escolher contatos do celular'),
+        contactsStatus, contactsResults)
+    : el('p', { style: 'font-size:13px;color:var(--text-mute);line-height:1.5' },
+        'Achar amigos pelos contatos só funciona no Chrome no Android por enquanto -- esse navegador/dispositivo não suporta.');
+
+  /* ---- abas ---- */
+  let activeTab = 'search';
+  const body = el('div', {});
+  const tabDefs = [['search', 'Buscar'], ['contacts', 'Contatos do celular']];
+  const tabButtons = tabDefs.map(([id, label]) => el('button', {
+    type: 'button', class: `tab ${id === activeTab ? 'active' : ''}`,
+    onclick: () => {
+      activeTab = id;
+      for (const [i, [tid]] of tabDefs.entries()) tabButtons[i].classList.toggle('active', tid === activeTab);
+      body.replaceChildren(activeTab === 'search' ? searchBody : contactsBody);
+      if (activeTab === 'search') setTimeout(() => input.focus(), 30);
+    }
+  }, label));
+  body.append(searchBody);
   setTimeout(() => input.focus(), 50);
 
   return shell({
     title: 'Adicionar amigo',
-    subtitle: 'Digite o nome de usuário completo, com a tag de 4 dígitos.',
-    body: el('div', {}, field('Nome de usuário', input), results),
-    foot: [cancelBtn(), el('button', { class: 'btn btn-primary', onclick: () => send(input.value.trim()) }, 'Enviar pedido')]
+    tabs: el('div', { class: 'tabs' }, tabButtons),
+    body,
+    foot: [cancelBtn()]
   });
 }
 

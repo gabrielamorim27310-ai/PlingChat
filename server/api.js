@@ -468,6 +468,14 @@ router.post('/friends/request', auth.requireAuth, rl.limit(rl.presets.friend), w
   res.json({ ok: true, status: friendship.status, user: store.publicUser(target) });
 }));
 
+/** Cruza e-mails da agenda de contatos do celular com contas que já
+ * existem no PlingChat -- "adicionar amigos dos contatos". */
+router.post('/friends/match-contacts', auth.requireAuth, rl.limit(rl.presets.contacts), wrap(async (req, res) => {
+  const emails = Array.isArray(req.body?.emails) ? req.body.emails.slice(0, 500) : [];
+  const users = await store.findUsersByEmails(emails, req.user.id);
+  res.json({ users });
+}));
+
 router.post('/friends/:id/respond', auth.requireAuth, wrap(async (req, res) => {
   const result = await store.respondFriendRequest(req.params.id, req.user.id, !!req.body?.accept);
   req.app.locals.notifyFriends?.([result.requester_id, result.addressee_id]);

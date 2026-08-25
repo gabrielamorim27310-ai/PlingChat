@@ -81,11 +81,23 @@ export function mentionsMe(content) {
   return new RegExp(`@${name}\\b`, 'i').test(content);
 }
 
-/** Envolve @meu-usuario num span pra destacar visualmente na mensagem (html ja escapado). */
+/** Envolve @menções de gente de verdade da conversa num span pra destacar
+ * na mensagem (html já escapado) -- a sua própria ganha um destaque extra,
+ * igual o Discord faz. */
 function highlightMentions(html) {
-  if (!state.me?.username) return html;
-  const name = state.me.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return html.replace(new RegExp(`@${name}\\b`, 'gi'), (m) => `<span class="mention">${m}</span>`);
+  const names = new Set(mentionCandidates().map((u) => u.username));
+  if (state.me?.username) names.add(state.me.username);
+  if (!names.size) return html;
+
+  const alternatives = [...names]
+    .sort((a, b) => b.length - a.length) // nomes mais longos primeiro, senão um prefixo casa antes da hora
+    .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const re = new RegExp(`@(${alternatives.join('|')})\\b`, 'gi');
+
+  return html.replace(re, (match, name) => {
+    const isMe = state.me?.username && name.toLowerCase() === state.me.username.toLowerCase();
+    return `<span class="mention${isMe ? ' me' : ''}">${match}</span>`;
+  });
 }
 
 export const guild = (id = state.activeGuildId) => state.guilds.find((g) => g.id === id);
@@ -955,6 +967,7 @@ export async function openChannel(channelId) {
   renderSidebar();
   renderMembers();
   renderCallWaitingBanner();
+  closeMentionMenu();
 
   if (!state.messages.has(channelId)) {
     const { messages } = await api.get(`/channels/${channelId}/messages`);
@@ -1703,6 +1716,72 @@ function bindStageResize() {
   });
 }
 
+/* ==================================================== menção (@) ==== */
+
+/** Quem dá pra @mencionar na conversa aberta agora -- o outro lado numa
+ * DM, ou todo mundo do servidor num canal de texto. */
+function mentionCandidates() {
+  const channel = channelById(state.activeChannelId);
+  if (!channel) return [];
+  if (channel.type === 'dm') return channel.recipient ? [channel.recipient] : [];
+  return guild()?.members || [];
+}
+
+let mention = null; // { start, query, candidates, index } -- null quando o menu tá fechado
+
+function closeMentionMenu() {
+  mention = null;
+  $('#mentionMenu').hidden = true;
+}
+
+function renderMentionMenu() {
+  const menu = $('#mentionMenu');
+  if (!mention || !mention.candidates.length) { menu.hidden = true; return; }
+  // replaceChildren(...nodes) espera os nós como argumentos separados --
+  // passar o array direto (sem espalhar) não lança erro, só vira o texto
+  // literal "[object HTMLButtonElement]" na tela (já vi essa antes).
+  menu.replaceChildren(...mention.candidates.map((user, i) => el('button', {
+    type: 'button',
+    class: `mention-option ${i === mention.index ? 'active' : ''}`,
+    onmousedown: (e) => e.preventDefault(), // não perde o foco do textarea ao clicar
+    onclick: () => insertMention(user)
+  },
+    avatarNode(user, { size: 22, status: false }),
+    el('span', { class: 'name' }, user.displayName || user.username),
+    el('span', { class: 'tag' }, `#${user.tag}`))));
+  menu.hidden = false;
+}
+
+/** Olha o texto antes do cursor: tem um "@algo" sem espaço colado nele?
+ * Se tiver, abre/atualiza o menu com quem bate com "algo"; senão fecha. */
+function updateMentionMenu() {
+  const input = $('#input');
+  const upToCursor = input.value.slice(0, input.selectionStart);
+  const match = /(?:^|\s)@([^\s@]*)$/.exec(upToCursor);
+  if (!match) return closeMentionMenu();
+
+  const query = match[1].toLowerCase();
+  const candidates = mentionCandidates()
+    .filter((u) => u.username.toLowerCase().startsWith(query) || (u.displayName || '').toLowerCase().startsWith(query))
+    .slice(0, 8);
+  if (!candidates.length) return closeMentionMenu();
+
+  mention = { start: upToCursor.length - match[1].length - 1, query, candidates, index: 0 };
+  renderMentionMenu();
+}
+
+function insertMention(user) {
+  const input = $('#input');
+  const name = user.displayName || user.username;
+  const before = input.value.slice(0, mention.start);
+  const after = input.value.slice(mention.start + 1 + mention.query.length);
+  input.value = `${before}@${name} ${after}`;
+  const caret = before.length + name.length + 2;
+  input.focus();
+  input.setSelectionRange(caret, caret);
+  closeMentionMenu();
+}
+
 function bindUI() {
   mountStaticIcons();
   $('#railHome').addEventListener('click', openHome);
@@ -1870,13 +1949,43 @@ function bindUI() {
     input.style.height = 'auto';
     input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
     emitTyping();
+    updateMentionMenu();
   });
 
   input.addEventListener('keydown', (event) => {
+    if (mention) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        mention.index = (mention.index + 1) % mention.candidates.length;
+        renderMentionMenu();
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        mention.index = (mention.index - 1 + mention.candidates.length) % mention.candidates.length;
+        renderMentionMenu();
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        insertMention(mention.candidates[mention.index]);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMentionMenu();
+        return;
+      }
+    }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       $('#composer').requestSubmit();
     }
+  });
+  // Clicar fora fecha o menu de menção (o próprio botão já usa
+  // onmousedown:preventDefault pra não disparar isso antes do clique valer).
+  document.addEventListener('click', (event) => {
+    if (mention && !$('#mentionMenu').contains(event.target) && event.target !== input) closeMentionMenu();
   });
 
   $('#composer').addEventListener('submit', (event) => {
@@ -1895,6 +2004,7 @@ function bindUI() {
     input.value = '';
     input.style.height = 'auto';
     clearReply();
+    closeMentionMenu();
   });
 
   $('#modalBackdrop').addEventListener('click', (event) => {

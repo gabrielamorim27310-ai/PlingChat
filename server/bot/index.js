@@ -240,7 +240,10 @@ async function handleMessage(message) {
 
     // Numa DM toda mensagem é "conversa com o bot"; num servidor só quando
     // te chamam pelo nome -- senão o Nexy responderia qualquer papo alheio.
-    const mentioned = /\bnexy\b/i.test(content);
+    // So dispara com uma @menção de verdade (via autocomplete do composer),
+    // nao mais qualquer frase que contenha "nexy" -- alguem comentando
+    // sobre o proprio bot num canal nao deveria acordar ele sem querer.
+    const mentioned = /@nexy\b/i.test(content);
     if (!guild || mentioned) {
       // DM tem contexto de conversa de verdade (últimas mensagens trocadas);
       // menção num canal de servidor fica sem histórico -- é um "oi" avulso,

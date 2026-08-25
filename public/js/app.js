@@ -483,6 +483,32 @@ async function handleLaunchParams() {
     }
   }
 
+  // Volta do checkout da Stripe -- o webhook normalmente já processou até
+  // aqui, mas pode atrasar um pouco; se o servidor ainda não aparece,
+  // recarrega uma vez em vez de deixar a pessoa presa numa tela velha.
+  const stripeStatus = params.get('stripe');
+  if (stripeStatus) {
+    dropParam('stripe');
+    const stripeGuildId = params.get('guild');
+    dropParam('guild');
+    if (stripeStatus === 'success' && stripeGuildId) {
+      if (state.guilds.some((g) => g.id === stripeGuildId)) {
+        openGuild(stripeGuildId);
+        toast('Pagamento confirmado! Bem-vindo(a).', 'ok');
+      } else {
+        toast('Pagamento recebido, finalizando sua entrada…', 'ok');
+        setTimeout(() => location.reload(), 2500);
+      }
+    } else if (stripeStatus === 'cancel') {
+      toast('Assinatura cancelada antes de terminar.');
+    }
+  }
+  if (params.get('stripe_onboarded')) {
+    dropParam('stripe_onboarded');
+    toast('Cadastro na Stripe recebido! Pode levar alguns minutos até ficar liberado pra receber.', 'ok');
+  }
+  dropParam('stripe_refresh');
+
   const code = params.get('convite');
   if (!code) return;
   dropParam('convite');

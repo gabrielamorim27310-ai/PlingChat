@@ -549,6 +549,46 @@ async function updateSettings(guildId, patch) {
   return getSettings(guildId);
 }
 
+/* ------------------------------------------------- comunidades pagas (Stripe) */
+
+// Fica fora do SETTING_COLUMNS/updateSettings de propósito: preço e o id
+// da Price da Stripe têm que mudar juntos (a Price é imutável lá, então
+// trocar o preço sempre cria uma nova) -- não é um campo solto que uma
+// rota genérica de configurações deveria poder sobrescrever.
+const setGuildPrice = (guildId, { priceCents, stripePriceId }) =>
+  run('UPDATE guild_settings SET paid_price_cents = ?, stripe_price_id = ? WHERE guild_id = ?', priceCents, stripePriceId, guildId);
+
+const setStripeAccountId = (userId, accountId) => run('UPDATE users SET stripe_account_id = ? WHERE id = ?', accountId, userId);
+const setStripeCustomerId = (userId, customerId) => run('UPDATE users SET stripe_customer_id = ? WHERE id = ?', customerId, userId);
+
+/** Espelha o status da assinatura vindo do webhook -- fonte da verdade é a
+ * Stripe, isso aqui é só cache local pra decidir acesso sem chamar a API
+ * toda hora. */
+const upsertGuildSubscription = ({ guildId, userId, stripeSubscriptionId, status, currentPeriodEnd }) =>
+  run(
+    `INSERT INTO guild_subscriptions (id, guild_id, user_id, stripe_subscription_id, status, current_period_end, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (stripe_subscription_id) DO UPDATE SET status = excluded.status, current_period_end = excluded.current_period_end`,
+    newId(), guildId, userId, stripeSubscriptionId, status, currentPeriodEnd, now()
+  );
+
+const getGuildSubscription = (guildId, userId) =>
+  get('SELECT * FROM guild_subscriptions WHERE guild_id = ? AND user_id = ?', guildId, userId);
+
+const getSubscriptionByStripeId = (stripeSubscriptionId) =>
+  get('SELECT * FROM guild_subscriptions WHERE stripe_subscription_id = ?', stripeSubscriptionId);
+
+const countActiveSubscribers = async (guildId) =>
+  Number((await get(`SELECT COUNT(*) AS n FROM guild_subscriptions WHERE guild_id = ? AND status = 'active'`, guildId))?.n || 0);
+
+/** A pessoa já tem acesso pago a esse servidor? ('trialing' conta como
+ * ativo -- 'past_due' também, a Stripe já está tentando cobrar de novo
+ * antes de cancelar de vez.) */
+const hasActiveSubscription = async (guildId, userId) => {
+  const sub = await getGuildSubscription(guildId, userId);
+  return !!sub && ['active', 'trialing', 'past_due'].includes(sub.status);
+};
+
 /* ---------------------------------------------------------------- leitura */
 
 const markRead = (userId, channelId) =>
@@ -644,6 +684,8 @@ module.exports = {
   sendFriendRequest, respondFriendRequest, removeFriend, blockUser, unblockUser, autoFriend,
   listFriends, areFriends, isBlocked, friendshipBetween,
   getSettings, updateSettings,
+  setGuildPrice, setStripeAccountId, setStripeCustomerId,
+  upsertGuildSubscription, getGuildSubscription, getSubscriptionByStripeId, countActiveSubscribers, hasActiveSubscription,
   markRead, unreadCounts,
   saveSubscription, removeSubscription, listSubscriptions,
   logAudit, listAuditLog, domainMatches

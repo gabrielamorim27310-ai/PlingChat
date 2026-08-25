@@ -11,6 +11,7 @@ const mailer = require('./mailer');
 const turnstile = require('./turnstile');
 const push = require('./push');
 const rl = require('./ratelimit');
+const stripeModule = require('./stripe');
 
 const router = express.Router();
 
@@ -217,9 +218,18 @@ router.post('/guilds/join', auth.requireAuth, wrap(async (req, res) => {
   if (!guild) throw new Error('Convite invalido ou expirado');
   if (await store.isBanned(guild.id, req.user.id)) throw new Error('Voce esta banido deste servidor');
   if (await store.getMember(guild.id, req.user.id)) throw new Error('Voce ja esta neste servidor');
-  const orgDomain = (await store.getSettings(guild.id)).org_domain;
-  if (orgDomain && !(await store.domainMatches(guild.id, req.user))) {
-    throw new Error(`Esse servidor é restrito a e-mails @${orgDomain}`);
+  const settings = await store.getSettings(guild.id);
+  if (settings.org_domain && !(await store.domainMatches(guild.id, req.user))) {
+    throw new Error(`Esse servidor é restrito a e-mails @${settings.org_domain}`);
+  }
+  // Servidor pago: convite não dá acesso de graça -- devolve os dados pro
+  // front mostrar "assinar por RS X/mês" em vez de entrar direto.
+  if (settings.paid_price_cents && !(await store.hasActiveSubscription(guild.id, req.user.id))) {
+    return res.json({
+      paymentRequired: true,
+      guild: { id: guild.id, name: guild.name, iconColor: guild.icon_color, iconUrl: guild.icon_url },
+      priceCents: settings.paid_price_cents
+    });
   }
 
   await store.addMember(guild.id, req.user.id);
@@ -390,6 +400,73 @@ router.patch('/guilds/:id/icon', auth.requireAuth, wrap(async (req, res) => {
   const payload = store.guildPayload(updated);
   req.app.locals.broadcastGuildInfo?.(guild.id, { name: payload.name, iconColor: payload.iconColor, iconUrl: payload.iconUrl });
   res.json({ guild: payload });
+}));
+
+/* ------------------------------------------------- comunidades pagas (Stripe) */
+
+/** Status da monetização do servidor -- pra tela de configurações do dono
+ * e pra decidir se mostra "assinar" no convite. Qualquer membro pode ver
+ * (não é informação sensível), só quem mexe é o dono mesmo. */
+router.get('/guilds/:id/monetization', auth.requireAuth, wrap(async (req, res) => {
+  const guild = await store.getGuild(req.params.id);
+  if (!guild || !(await store.getMember(guild.id, req.user.id))) throw new Error('Sem acesso a este servidor');
+  const owner = await store.getUser(guild.owner_id);
+  const settings = await store.getSettings(guild.id);
+  res.json({
+    enabled: stripeModule.isEnabled(),
+    connected: !!owner.stripe_account_id,
+    ready: owner.stripe_account_id ? await stripeModule.isAccountReady(owner.stripe_account_id) : false,
+    priceCents: settings.paid_price_cents || null,
+    subscriberCount: await store.countActiveSubscribers(guild.id)
+  });
+}));
+
+/** Só o dono conecta a própria conta Stripe -- não faz sentido um
+ * admin redirecionar o dinheiro do servidor pra conta de outra pessoa. */
+router.post('/guilds/:id/monetization/connect', auth.requireAuth, wrap(async (req, res) => {
+  const guild = await store.getGuild(req.params.id);
+  if (!guild) throw new Error('Servidor não encontrado');
+  if (guild.owner_id !== req.user.id) throw new Error('Só o dono do servidor pode conectar o recebimento.');
+  const url = await stripeModule.createOnboardingLink(req.user);
+  res.json({ url });
+}));
+
+/** Define (ou remove, mandando null) o preço mensal de acesso. */
+router.patch('/guilds/:id/monetization', auth.requireAuth, wrap(async (req, res) => {
+  const guild = await store.getGuild(req.params.id);
+  if (!guild) throw new Error('Servidor não encontrado');
+  if (guild.owner_id !== req.user.id) throw new Error('Só o dono do servidor pode mudar o preço.');
+
+  const { priceCents } = req.body || {};
+  if (priceCents === null) {
+    await store.setGuildPrice(guild.id, { priceCents: null, stripePriceId: null });
+  } else {
+    const owner = await store.getUser(guild.owner_id);
+    if (!owner.stripe_account_id || !(await stripeModule.isAccountReady(owner.stripe_account_id))) {
+      throw new Error('Conecte e finalize o cadastro na Stripe antes de definir um preço.');
+    }
+    const stripePriceId = await stripeModule.createGuildPrice(guild, Number(priceCents));
+    await store.setGuildPrice(guild.id, { priceCents: Number(priceCents), stripePriceId });
+  }
+  res.json({ settings: await store.getSettings(guild.id) });
+}));
+
+/** Quem quer entrar num servidor pago cai aqui em vez de /guilds/join --
+ * devolve a URL do checkout hospedado pela Stripe pra redirecionar. */
+router.post('/guilds/:id/subscribe', auth.requireAuth, wrap(async (req, res) => {
+  const guild = await store.getGuild(req.params.id);
+  if (!guild) throw new Error('Servidor não encontrado');
+  if (await store.isBanned(guild.id, req.user.id)) throw new Error('Você está banido deste servidor');
+  const settings = await store.getSettings(guild.id);
+  if (!settings.paid_price_cents || !settings.stripe_price_id) throw new Error('Este servidor não tem cobrança configurada.');
+
+  const owner = await store.getUser(guild.owner_id);
+  if (!owner.stripe_account_id) throw new Error('O dono deste servidor ainda não configurou o recebimento.');
+
+  const url = await stripeModule.createCheckoutSession({
+    guild, priceId: settings.stripe_price_id, ownerAccountId: owner.stripe_account_id, buyer: req.user
+  });
+  res.json({ url });
 }));
 
 /** Log de auditoria: quem fez o que, quando. So admin/dono ve. */

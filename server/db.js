@@ -266,6 +266,22 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_audit_log_guild ON audit_log(guild_id, created_at);
+
+-- Comunidades pagas (Stripe Connect): quem assina o servidor de quem.
+-- Guarda o status espelhado da Stripe (fonte da verdade continua sendo o
+-- webhook) so pra decidir acesso rapido sem chamar a API toda hora.
+CREATE TABLE IF NOT EXISTS guild_subscriptions (
+  id                     TEXT PRIMARY KEY,
+  guild_id               TEXT NOT NULL REFERENCES guilds(id) ON DELETE CASCADE,
+  user_id                TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  stripe_subscription_id TEXT NOT NULL UNIQUE,
+  status                 TEXT NOT NULL,
+  current_period_end     BIGINT,
+  created_at             BIGINT NOT NULL,
+  UNIQUE (guild_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_guild_subs_guild ON guild_subscriptions(guild_id);
+CREATE INDEX IF NOT EXISTS idx_guild_subs_user ON guild_subscriptions(user_id);
 `;
 
 /** Roda o schema inteiro + migracoes aditivas. Chamado uma vez, na subida. */
@@ -277,6 +293,12 @@ async function migrate() {
   // Confirmação de leitura em DM (opcional, reciproca -- ver store.listDMs):
   // quem desliga também para de ver quando os outros leram.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS share_read_receipts INTEGER NOT NULL DEFAULT 1`);
+  // Comunidades pagas (Stripe Connect): conta conectada de quem RECEBE
+  // (dono de servidor) e customer de quem PAGA (assinante).
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_account_id TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`);
+  await pool.query(`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS paid_price_cents INTEGER`);
+  await pool.query(`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS stripe_price_id TEXT`);
 }
 
 module.exports = { pool, newId, all, get, run, migrate };

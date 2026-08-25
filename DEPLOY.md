@@ -152,7 +152,26 @@ Enquanto isso, `!tocar` continua exatamente como está — funciona, é de graç
 
 ---
 
-## 10. Antes de abrir para outras pessoas
+## 10. Comunidades pagas (Stripe Connect)
+
+Dono de servidor pode cobrar assinatura mensal pra entrar (cartão ou Pix). O dinheiro vai direto pra conta do dono via Stripe Connect; o PlingChat fica com uma comissão configurável (`PLATFORM_FEE_PERCENT`, 0% até definir um número de verdade). Sem isso configurado, essa seção some sozinha das configurações do servidor — nada quebra.
+
+1. Crie uma conta em [dashboard.stripe.com/register](https://dashboard.stripe.com/register) e ative o **Connect** (Configurações → Connect).
+2. Pegue as chaves em **Desenvolvedores → Chaves de API**.
+3. Configure um endpoint de webhook em **Desenvolvedores → Webhooks** apontando pra `https://SEU-BACKEND/api/stripe/webhook`, escutando pelo menos: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`. Copie o "signing secret" gerado ali.
+4. Configure no Render:
+
+| Variável | Valor |
+|---|---|
+| `STRIPE_SECRET_KEY` | a chave secreta (começa com `sk_`) |
+| `STRIPE_WEBHOOK_SECRET` | o signing secret do passo 3 (começa com `whsec_`) |
+| `PLATFORM_FEE_PERCENT` | opcional — percentual retido pelo PlingChat (ex.: `10` = 10%). Padrão `0` — o dono recebe o valor cheio até você definir um número. |
+
+Como funciona: cada dono conecta a própria conta Stripe (onboarding hospedado pela Stripe, nada de dado bancário passa pelo nosso servidor) e define um preço mensal em **Configurações do servidor → Monetização**. Quem tenta entrar por convite num servidor pago é direcionado pro checkout em vez de entrar direto; o acesso entra e sai sozinho conforme a assinatura fica ativa ou é cancelada (via webhook).
+
+---
+
+## 11. Antes de abrir para outras pessoas
 
 - **Servidor TURN.** Hoje só há STUN público. Duas pessoas atrás de NAT restrito (4G, redes corporativas) podem não conseguir fechar a conexão de voz/vídeo. Um TURN (coturn próprio, Twilio, Metered) resolve; a lista fica em `ICE_SERVERS`, no topo de `public/js/voice.js`.
 - **Escala da malha de voz.** A conexão é ponto a ponto entre todos os participantes: cada pessoa envia sua mídia para todas as outras. Funciona bem até ~6 pessoas por canal. Acima disso, o caminho é um SFU (mediasoup, LiveKit, Janus).

@@ -178,11 +178,15 @@ function joinGuild() {
 
   const submit = async () => {
     try {
-      const { guild } = await api.post('/guilds/join', { code: input.value.trim() });
-      state.guilds.push(guild);
+      const data = await api.post('/guilds/join', { code: input.value.trim() });
+      if (data.paymentRequired) {
+        closeModal();
+        return openModal(subscribeGuild(data.guild, data.priceCents));
+      }
+      state.guilds.push(data.guild);
       closeModal();
-      openGuild(guild.id);
-      toast(`Você entrou em "${guild.name}"!`, 'ok');
+      openGuild(data.guild.id);
+      toast(`Você entrou em "${data.guild.name}"!`, 'ok');
     } catch (err) {
       toast(err.message, 'err');
     }
@@ -196,6 +200,33 @@ function joinGuild() {
     subtitle: 'Cole abaixo o código de convite que te enviaram.',
     body: field('Código de convite', input),
     foot: [cancelBtn(), el('button', { class: 'btn btn-primary', onclick: submit }, 'Entrar')]
+  });
+}
+
+const formatBRL = (cents) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+/** Servidor pago -- em vez de entrar direto, redireciona pro checkout
+ * hospedado pela Stripe. */
+function subscribeGuild(guild, priceCents) {
+  const goToCheckout = async () => {
+    try {
+      const { url } = await api.post(`/guilds/${guild.id}/subscribe`, {});
+      location.href = url;
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  };
+
+  return shell({
+    title: `Assinar "${guild.name}"`,
+    subtitle: 'Este servidor é uma comunidade paga -- a entrada é por assinatura mensal.',
+    body: el('div', { style: 'text-align:center;padding:12px 0' },
+      el('div', { style: 'font-size:32px;font-weight:800;margin-bottom:4px' }, formatBRL(priceCents)),
+      el('div', { style: 'color:var(--text-mute);font-size:13px' }, 'por mês, cartão ou Pix. Cancele quando quiser.')),
+    foot: [
+      cancelBtn(),
+      el('button', { class: 'btn btn-primary', onclick: goToCheckout }, 'Continuar pro pagamento')
+    ]
   });
 }
 
@@ -347,6 +378,71 @@ function invite(guild) {
 
 /* ================================================== configurações guild = */
 
+/**
+ * Comunidades pagas: só o dono do servidor vê os controles de verdade
+ * (conectar Stripe, definir preço) -- quem não é dono só vê um aviso.
+ */
+function monetizationSettings(guild) {
+  if (guild.ownerId !== state.me.id) {
+    return el('p', { style: 'font-size:13px;color:var(--text-mute)' }, 'Só o dono do servidor pode configurar isso.');
+  }
+
+  const statusBox = el('div', {}, el('p', { style: 'font-size:13px;color:var(--text-mute)' }, 'Carregando…'));
+  const priceInput = el('input', { type: 'text', inputmode: 'decimal', placeholder: '9,90' });
+  const priceRow = el('div', { class: 'voice-settings-group', hidden: true, style: 'margin-top:14px' },
+    field('Preço mensal (R$)', priceInput),
+    el('button', { class: 'btn btn-primary', onclick: () => savePrice() }, 'Salvar preço'));
+
+  const connect = async () => {
+    try {
+      const { url } = await api.post(`/guilds/${guild.id}/monetization/connect`, {});
+      location.href = url;
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  };
+
+  const savePrice = async () => {
+    const reais = parseFloat(priceInput.value.replace(',', '.'));
+    if (!reais || reais < 1) return toast('Preço mínimo é R$ 1,00.', 'err');
+    try {
+      await api.patch(`/guilds/${guild.id}/monetization`, { priceCents: Math.round(reais * 100) });
+      toast('Preço atualizado!', 'ok');
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  };
+
+  (async () => {
+    try {
+      const data = await api.get(`/guilds/${guild.id}/monetization`);
+      if (!data.enabled) {
+        statusBox.replaceChildren(el('p', { style: 'font-size:13px;color:var(--text-mute)' },
+          'Pagamentos ainda não configurados no servidor.'));
+      } else if (!data.connected) {
+        statusBox.replaceChildren(
+          el('p', { style: 'font-size:13px;color:var(--text-mute);margin-bottom:8px' },
+            'Conecte uma conta Stripe pra poder cobrar entrada nesse servidor.'),
+          el('button', { class: 'btn btn-primary', onclick: connect }, 'Conectar Stripe'));
+      } else if (!data.ready) {
+        statusBox.replaceChildren(
+          el('p', { style: 'font-size:13px;color:var(--text-mute);margin-bottom:8px' },
+            'Cadastro na Stripe incompleto — termine lá pra poder receber.'),
+          el('button', { class: 'btn btn-ghost', onclick: connect }, 'Continuar cadastro'));
+      } else {
+        statusBox.replaceChildren(el('p', { style: 'font-size:13px;color:var(--text-mute)' },
+          `Conectado. ${data.subscriberCount} assinante(s) ativo(s).`));
+        priceRow.hidden = false;
+        if (data.priceCents) priceInput.value = (data.priceCents / 100).toFixed(2).replace('.', ',');
+      }
+    } catch {
+      statusBox.replaceChildren(el('p', { style: 'font-size:13px;color:var(--text-mute)' }, 'Não foi possível carregar o status.'));
+    }
+  })();
+
+  return el('div', {}, statusBox, priceRow);
+}
+
 function guildSettings(guild) {
   const settings = { ...guild.settings };
   const textChannels = guild.channels.filter((c) => c.type === 'text');
@@ -494,6 +590,9 @@ function guildSettings(guild) {
         settings.org_domain
           ? `Qualquer conta com e-mail @${settings.org_domain} pode entrar sem convite, pelo link: ${location.origin}/?org=${guild.id}`
           : 'Deixe em branco pra manter fechado só por convite. Preenchido, qualquer pessoa com e-mail desse domínio entra sozinha.'),
+
+      el('h4', { style: 'margin:22px 0 10px;color:var(--brand-2);font-size:12px;text-transform:uppercase' }, 'Monetização'),
+      monetizationSettings(guild),
 
       el('h4', { style: 'margin:22px 0 10px;color:var(--brand-2);font-size:12px;text-transform:uppercase' }, 'Bot'),
       field('Prefixo dos comandos', prefix),

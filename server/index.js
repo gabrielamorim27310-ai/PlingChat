@@ -10,6 +10,7 @@ const express = require('express');
 const api = require('./api');
 const { attachRealtime } = require('./realtime');
 const db = require('./db');
+const stripeModule = require('./stripe');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -42,6 +43,30 @@ app.use((req, res, next) => {
   }
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
+});
+
+/**
+ * Webhook da Stripe: precisa do corpo CRU (Buffer, sem passar pelo parser
+ * de JSON) pra conferir a assinatura -- por isso vem antes do
+ * express.json() global e não mora dentro do router /api normal.
+ */
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  if (!stripeModule.isEnabled()) return res.status(404).end();
+  let event;
+  try {
+    event = stripeModule.constructEvent(req.body, req.headers['stripe-signature']);
+  } catch (err) {
+    console.error('[stripe-webhook] assinatura inválida:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+  try {
+    await stripeModule.handleWebhookEvent(event);
+    res.json({ received: true });
+  } catch (err) {
+    // 500 faz a Stripe tentar de novo mais tarde -- melhor que engolir o erro.
+    console.error('[stripe-webhook] falha processando evento:', event.type, err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.use(express.json({ limit: '1mb' }));

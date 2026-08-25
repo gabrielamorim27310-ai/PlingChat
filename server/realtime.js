@@ -296,7 +296,20 @@ function attachRealtime(server, app, { originAllowed = () => true } = {}) {
     });
 
     socket.on('channel:read', async ({ channelId } = {}) => {
-      if (channelId) await store.markRead(userId, channelId);
+      if (!channelId) return;
+      await store.markRead(userId, channelId);
+
+      // Confirmação de leitura só em DM, e só se a própria pessoa deixa a
+      // leitura visível (recíproco -- ver store.listDMs). Confere no banco
+      // em vez de socket.data.user pra não usar um valor desatualizado se
+      // ela mudou o ajuste sem reconectar.
+      const channel = await store.getChannel(channelId);
+      if (channel?.type !== 'dm') return;
+      const me = await store.getUser(userId);
+      if (!me?.share_read_receipts) return;
+      for (const room of await channelAudience(channel)) {
+        io.to(room).emit('dm:read', { channelId, userId, at: store.now() });
+      }
     });
 
     socket.on('presence:update', async ({ status } = {}) => {

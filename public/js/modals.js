@@ -6,7 +6,7 @@ import {
 } from './app.js';
 import {
   soundsEnabled, setSoundsEnabled, osNotificationsEnabled, enableOsNotifications, disableOsNotifications,
-  isIOS, isMac, isStandaloneApp
+  isIOS, isMac, isStandaloneApp, SOUND_OPTIONS, getConversationSound, setConversationSound, convSoundKey
 } from './notify.js';
 import { listMediaDevices, canPickAudioOutput } from './voice.js';
 
@@ -1065,6 +1065,45 @@ function voiceSettings() {
   return { node, cleanup };
 }
 
+/**
+ * Escolhe um som de notificação só pra esta conversa (DM) ou servidor --
+ * assim dá pra reconhecer quem tá chamando de ouvido, sem olhar a tela.
+ * `channel` é o canal aberto no momento (DM ou canal de servidor).
+ */
+function conversationSound(channel) {
+  const key = convSoundKey(channel);
+  const name = channel?.type === 'dm'
+    ? channel.recipient?.username
+    : state.guilds.find((g) => g.id === channel?.guildId)?.name;
+
+  const preview = new Audio();
+  let rows = [];
+
+  const select = (value) => {
+    setConversationSound(key, value);
+    for (const row of rows) row.classList.toggle('active', row.dataset.value === value);
+  };
+
+  rows = SOUND_OPTIONS.map((opt) => el('button', {
+    type: 'button',
+    class: `sound-option ${getConversationSound(key) === opt.value ? 'active' : ''}`,
+    dataset: { value: opt.value },
+    onclick: () => select(opt.value)
+  },
+    el('span', {}, opt.label),
+    el('button', {
+      type: 'button', class: 'icon-btn', title: 'Tocar',
+      onclick: (e) => { e.stopPropagation(); preview.src = opt.file; preview.currentTime = 0; preview.play().catch(() => {}); }
+    }, icon('play', 13))));
+
+  return shell({
+    title: 'Som desta conversa',
+    subtitle: name ? `Toca só pra mensagens de ${name}` : null,
+    body: el('div', { class: 'sound-picker' }, rows),
+    foot: [el('button', { class: 'btn btn-primary', onclick: closeModal }, 'Pronto')]
+  });
+}
+
 /** Sons de "pling" + notificações do sistema com a aba aberta em segundo plano. */
 function notifSettings() {
   const soundToggle = switchRow(
@@ -1254,6 +1293,17 @@ function userSettings() {
         onclick: () => openModal(appInvites())
       }, icon('user-plus', 15), ' Meus convites de cadastro'),
       field('Notificações', notifSettings()),
+      field('Privacidade', switchRow(
+        'Confirmação de leitura', 'Mostra quando você leu as mensagens de alguém (e quando alguém lê as suas). Desligar tira dos dois lados.',
+        state.me.shareReadReceipts !== false,
+        async (on) => {
+          try {
+            const { user } = await api.patch('/me', { shareReadReceipts: on });
+            state.me = user;
+          } catch (err) {
+            toast(err.message, 'err');
+          }
+        })),
       appConfig.vapidPublicKey ? el('button', {
         class: 'btn btn-ghost btn-block',
         style: 'margin-top:6px',
@@ -1392,5 +1442,5 @@ function sendBotCommand(command) {
 
 export const modals = {
   addGuild, createGuild, joinGuild, createChannel, guildMenu, invite,
-  guildSettings, botPanel, userSettings, addFriend, userCard, appInvites, auditLog
+  guildSettings, botPanel, userSettings, addFriend, userCard, appInvites, auditLog, conversationSound
 };

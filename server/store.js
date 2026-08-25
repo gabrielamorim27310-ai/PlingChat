@@ -31,6 +31,7 @@ function publicUser(u) {
     isBot: !!u.is_bot,
     emailVerified: !!u.email_verified,
     hasEmail: !!u.email,
+    shareReadReceipts: u.share_read_receipts === undefined ? true : !!u.share_read_receipts,
     createdAt: Number(u.created_at)
   };
 }
@@ -79,6 +80,9 @@ async function updateProfile(userId, patch) {
   const map = { avatarColor: 'avatar_color', avatarUrl: 'avatar_url', customStatus: 'custom_status', bio: 'bio', status: 'status' };
   for (const [key, col] of Object.entries(map)) {
     if (patch[key] !== undefined) await run(`UPDATE users SET ${col} = ? WHERE id = ?`, patch[key], userId);
+  }
+  if (patch.shareReadReceipts !== undefined) {
+    await run('UPDATE users SET share_read_receipts = ? WHERE id = ?', patch.shareReadReceipts ? 1 : 0, userId);
   }
   return getUser(userId);
 }
@@ -310,10 +314,17 @@ async function listDMs(userId) {
     const participants = await dmParticipants(c.id);
     const otherId = participants.find((id) => id !== userId);
     const last = await get('SELECT created_at FROM messages WHERE channel_id = ? ORDER BY created_at DESC LIMIT 1', c.id);
+    const other = await getUser(otherId);
+    // Recíproco tipo WhatsApp: só mostra que a outra pessoa leu se ela
+    // também deixa a própria leitura visível.
+    const theirRead = other?.share_read_receipts
+      ? await get('SELECT last_read FROM read_state WHERE user_id = ? AND channel_id = ?', otherId, c.id)
+      : null;
     out.push({
       ...channelPayload(c),
-      recipient: publicUser(await getUser(otherId)),
-      lastMessageAt: last ? Number(last.created_at) : Number(c.created_at)
+      recipient: publicUser(other),
+      lastMessageAt: last ? Number(last.created_at) : Number(c.created_at),
+      theirLastRead: theirRead ? Number(theirRead.last_read) : 0
     });
   }
   return out.sort((a, b) => b.lastMessageAt - a.lastMessageAt);

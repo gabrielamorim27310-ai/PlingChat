@@ -119,7 +119,23 @@ Com as duas presentes, o desafio aparece no cadastro, no login e na recuperaçã
 
 ---
 
-## 8. Antes de abrir para outras pessoas
+## 8. Nexy responder com IA de verdade (opcional)
+
+Sem isso, o Nexy só responde por regras fixas (saudação, "quem é você" etc. — ver `server/bot/commands/fun.js`). Com a chave configurada, ele passa a responder de verdade via Claude (Anthropic) em qualquer DM e quando chamado pelo nome ("nexy") num canal de servidor.
+
+1. Crie uma conta em [console.anthropic.com](https://console.anthropic.com) e gere uma API key.
+2. Configure no Render:
+
+| Variável | Valor |
+|---|---|
+| `ANTHROPIC_API_KEY` | a chave gerada |
+| `ANTHROPIC_BOT_MODEL` | opcional — modelo a usar (padrão `claude-opus-5`). Pra um bot de bate-papo casual e alto volume, `claude-haiku-4-5` é bem mais barato/rápido; troque se o custo do Opus pesar. |
+
+Cobra por uso (tokens de entrada/saída) — sem chave configurada, nada é cobrado e o bot segue no modo de sempre. Cada resposta em DM carrega as últimas mensagens da conversa como contexto; menções em canal de servidor são avulsas (sem histórico), pra não misturar o papo alheio do canal.
+
+---
+
+## 9. Antes de abrir para outras pessoas
 
 - **Servidor TURN.** Hoje só há STUN público. Duas pessoas atrás de NAT restrito (4G, redes corporativas) podem não conseguir fechar a conexão de voz/vídeo. Um TURN (coturn próprio, Twilio, Metered) resolve; a lista fica em `ICE_SERVERS`, no topo de `public/js/voice.js`.
 - **Escala da malha de voz.** A conexão é ponto a ponto entre todos os participantes: cada pessoa envia sua mídia para todas as outras. Funciona bem até ~6 pessoas por canal. Acima disso, o caminho é um SFU (mediasoup, LiveKit, Janus).

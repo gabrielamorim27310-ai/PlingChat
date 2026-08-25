@@ -8,10 +8,46 @@
 
 const SOUND_KEY = 'nexus.soundsEnabled';
 const OS_KEY = 'nexus.osNotifications';
+const CONV_SOUND_PREFIX = 'nexus.convSound.';
 
-const pling = new Audio('/sounds/pling.wav');
+/** Sons alternativos pra notificação -- dá pra escolher um diferente por
+ * amigo ou servidor (ver conversationSettings() em modals.js), pra dar de
+ * ouvido só quem tá chamando sem nem olhar a tela. */
+export const SOUND_OPTIONS = [
+  { value: 'default', label: 'Pling (padrão)', file: '/sounds/pling.wav' },
+  { value: 'marimba', label: 'Marimba', file: '/sounds/notif-marimba.wav' },
+  { value: 'bell', label: 'Sino', file: '/sounds/notif-bell.wav' },
+  { value: 'pop', label: 'Pop', file: '/sounds/notif-pop.wav' },
+  { value: 'arpeggio', label: 'Arpejo', file: '/sounds/notif-arpeggio.wav' }
+];
+
 const ring = new Audio('/sounds/ring.wav');
 ring.loop = true;
+
+const soundCache = new Map();
+function soundAudio(value) {
+  const opt = SOUND_OPTIONS.find((o) => o.value === value) || SOUND_OPTIONS[0];
+  if (!soundCache.has(opt.value)) soundCache.set(opt.value, new Audio(opt.file));
+  return soundCache.get(opt.value);
+}
+const pling = soundAudio('default');
+
+/** Chave da conversa (DM ou servidor) pra som personalizado -- `null` cai
+ * sempre no padrão. */
+export const convSoundKey = (channel) =>
+  !channel ? null : channel.type === 'dm' ? `dm:${channel.id}` : channel.guildId ? `guild:${channel.guildId}` : null;
+
+export function getConversationSound(key) {
+  if (!key) return 'default';
+  try { return localStorage.getItem(CONV_SOUND_PREFIX + key) || 'default'; } catch { return 'default'; }
+}
+export function setConversationSound(key, value) {
+  if (!key) return;
+  try {
+    if (!value || value === 'default') localStorage.removeItem(CONV_SOUND_PREFIX + key);
+    else localStorage.setItem(CONV_SOUND_PREFIX + key, value);
+  } catch { /* ignora */ }
+}
 
 /* -------------------------------------------------------- plataforma --- */
 
@@ -36,7 +72,10 @@ let audioUnlocked = false;
 export function unlockAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
-  for (const a of [pling, ring]) {
+  // Destrava todo som que a pessoa possa vir a ouvir, não só o padrão --
+  // senão o primeiro "pling" com som personalizado de um amigo ficaria
+  // mudo no iOS (cada elemento de áudio precisa do próprio toque).
+  for (const a of [...SOUND_OPTIONS.map((o) => soundAudio(o.value)), ring]) {
     const p = a.play();
     if (p?.catch) p.catch(() => {});
     a.pause();
@@ -44,11 +83,14 @@ export function unlockAudio() {
   }
 }
 
-/** Toca o "pling" de mensagem nova. Silencioso se o navegador ainda bloquear autoplay. */
-export function playPling() {
+/** Toca o "pling" de mensagem nova -- `convKey` (ver convSoundKey) escolhe
+ * o som personalizado daquela conversa, se a pessoa tiver trocado.
+ * Silencioso se o navegador ainda bloquear autoplay. */
+export function playPling(convKey) {
   if (!soundsEnabled()) return;
-  pling.currentTime = 0;
-  pling.play().catch(() => {});
+  const audio = soundAudio(getConversationSound(convKey));
+  audio.currentTime = 0;
+  audio.play().catch(() => {});
 }
 
 export function startRingtone() {

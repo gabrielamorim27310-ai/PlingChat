@@ -136,7 +136,7 @@ router.get('/auth/me', auth.requireAuth, (req, res) => {
 });
 
 router.patch('/me', auth.requireAuth, wrap(async (req, res) => {
-  const { avatarColor, avatarUrl, customStatus, bio, status } = req.body || {};
+  const { avatarColor, avatarUrl, customStatus, bio, status, shareReadReceipts } = req.body || {};
 
   let nextAvatarUrl;
   if (avatarUrl !== undefined) {
@@ -151,7 +151,7 @@ router.patch('/me', auth.requireAuth, wrap(async (req, res) => {
   }
 
   const user = await store.updateProfile(req.user.id, {
-    avatarColor, avatarUrl: nextAvatarUrl, customStatus, bio, status
+    avatarColor, avatarUrl: nextAvatarUrl, customStatus, bio, status, shareReadReceipts
   });
   req.app.locals.broadcastProfileUpdate?.(req.user.id);
   res.json({ user: store.publicUser(user) });

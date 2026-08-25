@@ -2,6 +2,7 @@
 
 const store = require('../store');
 const { all, get, run, newId } = require('../db');
+const { askAI } = require('./ai');
 
 const BOT_ID = 'nexy-bot-0001';
 
@@ -236,12 +237,28 @@ async function handleMessage(message) {
 
   if (!content.startsWith(prefix)) {
     if (guild) await grantXP(guild.id, user.id, channel.id);
-    // Menção direta ao bot vira conversa
-    if (/\bnexy\b/i.test(content)) {
+
+    // Numa DM toda mensagem é "conversa com o bot"; num servidor só quando
+    // te chamam pelo nome -- senão o Nexy responderia qualquer papo alheio.
+    const mentioned = /\bnexy\b/i.test(content);
+    if (!guild || mentioned) {
+      // DM tem contexto de conversa de verdade (últimas mensagens trocadas);
+      // menção num canal de servidor fica sem histórico -- é um "oi" avulso,
+      // não uma DM continuada, e não faz sentido puxar o papo alheio do canal.
+      const history = !guild
+        ? (await store.listMessages(channel.id, { limit: 13 }))
+            .filter((m) => m.id !== message.id)
+            .slice(-12)
+            .map((m) => ({ content: m.content, mine: m.author.id === BOT_ID }))
+        : [];
+
+      const aiAnswer = await askAI({ userId: user.id, username: user.username, content, history });
+      if (aiAnswer) { await say(channel.id, aiAnswer); return true; }
+
+      // Sem IA configurada (ou a chamada falhou) -- cai pro script de sempre.
       const { smallTalk } = require('./commands/fun');
       const answer = smallTalk(content, user);
-      if (answer) await say(channel.id, answer);
-      return true;
+      if (answer) { await say(channel.id, answer); return true; }
     }
     return false;
   }

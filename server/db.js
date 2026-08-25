@@ -274,6 +274,9 @@ async function migrate() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub TEXT`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified INTEGER NOT NULL DEFAULT 0`);
   await pool.query(`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS org_domain TEXT`);
+  // Confirmação de leitura em DM (opcional, reciproca -- ver store.listDMs):
+  // quem desliga também para de ver quando os outros leram.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS share_read_receipts INTEGER NOT NULL DEFAULT 1`);
 }
 
 module.exports = { pool, newId, all, get, run, migrate };

@@ -5,7 +5,7 @@ import { VoiceClient } from './voice.js';
 import { openModal, closeModal, modals } from './modals.js';
 import {
   playPling, startRingtone, stopRingtone, notifyOS, unlockAudio,
-  osNotificationsEnabled, enableOsNotifications, isIOS, isMac, isStandaloneApp
+  osNotificationsEnabled, enableOsNotifications, isIOS, isMac, isStandaloneApp, convSoundKey
 } from './notify.js';
 
 // iOS só libera áudio depois de um toque de verdade na página -- este é o
@@ -64,6 +64,7 @@ export const state = {
   typing: new Map(),      // channelId -> Map<userId, {user, ts}>
   voiceMembers: new Map(),// channelId -> [{user, state}]
   music: new Map(),       // guildId -> estado do player
+  dmReadState: new Map(), // channelId (DM) -> timestamp do ultimo "lido" da outra pessoa
 
   replyTo: null,
   stageCollapsed: false,
@@ -491,6 +492,7 @@ async function start() {
   state.me = data.user;
   state.guilds = data.guilds;
   state.dms = data.dms;
+  for (const dm of data.dms) state.dmReadState.set(dm.id, dm.theirLastRead || 0);
   state.friends = data.friends;
   state.unread = data.unread;
   state.botCommands = data.bot.commands;
@@ -531,7 +533,7 @@ function connectSocket() {
     // você já está olhando (a notificação do sistema é que só aparece com a
     // aba sem foco -- isso já é resolvido dentro de notifyOS).
     if (!isMine) {
-      playPling();
+      playPling(convSoundKey(channel));
       if (channel?.type === 'dm' || mentioned) {
         const title = channel?.type === 'dm' ? message.author.username : `${message.author.username} em #${channel?.name ?? ''}`;
         notifyOS(title, message.content.slice(0, 140), {
@@ -646,6 +648,7 @@ function connectSocket() {
     const g = guild(guildId);
     if (!g) return;
     Object.assign(g, patch);
+    if (state.activeGuildId === guildId) applyGuildAccent(g.iconColor);
     renderRail();
     renderSidebar();
   });
@@ -664,6 +667,14 @@ function connectSocket() {
   socket.on('friends:update', (friends) => {
     state.friends = friends;
     if (state.view === 'home') { renderSidebar(); renderHome(); }
+  });
+
+  // Confirmação de leitura -- só chega se a outra pessoa deixa a leitura
+  // dela visível (recíproco, ver PATCH /me). Atualiza o "Visto" ao vivo.
+  socket.on('dm:read', ({ channelId, userId, at }) => {
+    if (userId === state.me.id) return;
+    state.dmReadState.set(channelId, at);
+    if (channelId === state.activeChannelId) renderMessages();
   });
 
   socket.on('voice:members', ({ channelId, members }) => {
@@ -758,7 +769,8 @@ function renderRail() {
       title: g.name,
       style: `background:${g.iconColor}`,
       onclick: () => openGuild(g.id)
-    }, g.iconUrl ? el('img', { src: g.iconUrl, alt: '' }) : el('span', {}, initials(g.name)), el('span', { class: 'rail-pill' }));
+    }, g.iconUrl ? el('img', { src: g.iconUrl, alt: '' }) : el('span', {}, initials(g.name)),
+      el('span', { class: 'rail-pill', style: `--rail-pill-color:${g.iconColor}` }));
 
     if (unread) button.append(el('span', { class: `rail-badge ${mentioned ? 'mentioned' : ''}` }, unread > 99 ? '99+' : unread));
     container.append(button);
@@ -877,11 +889,18 @@ function renderSidebar() {
 
 /* ========================================================== navegação === */
 
+// A cor do servidor aberto tinge alguns detalhes discretos da UI (o
+// tracinho do canal ativo, por ex.) -- em Amigos/DM volta pro neutro.
+function applyGuildAccent(color) {
+  document.documentElement.style.setProperty('--guild-accent', color || 'var(--text)');
+}
+
 export function openHome() {
   state.view = 'home';
   state.activeGuildId = null;
   state.activeChannelId = null;
   document.getElementById('app').classList.remove('chat-open');
+  applyGuildAccent(null);
   renderSidebar();
   renderHome();
   renderRail();
@@ -892,6 +911,7 @@ export function openGuild(guildId) {
   if (!g) return;
   state.view = 'guild';
   state.activeGuildId = guildId;
+  applyGuildAccent(g.iconColor);
   renderSidebar();
   const first = g.channels.find((c) => c.type === 'text');
   if (first) openChannel(first.id);
@@ -914,6 +934,7 @@ export async function openChannel(channelId) {
   $('#composer').hidden = false;
   $('#btnCall').hidden = !isDM;
   $('#btnVideoCall').hidden = !isDM;
+  $('#btnConvSound').hidden = false;
   $('#btnMembers').hidden = isDM;
   $('#btnBotPanel').hidden = isDM;
   // No celular o painel de membros não abre sozinho -- cobre a tela toda e
@@ -983,6 +1004,7 @@ function renderHome() {
   $('#membersPane').hidden = true;
   $('#btnCall').hidden = true;
   $('#btnVideoCall').hidden = true;
+  $('#btnConvSound').hidden = true;
   $('#btnMembers').hidden = true;
   $('#btnBotPanel').hidden = true;
   $('#chatTopic').textContent = '';
@@ -1162,6 +1184,17 @@ function renderMessages() {
     container.append(messageNode(message, grouped));
     lastAuthor = message.author.id;
     lastTs = message.createdAt;
+  }
+
+  // Confirmação de leitura: "Visto" só embaixo da ÚLTIMA mensagem que eu
+  // mandei numa DM, e só quando o timestamp de leitura da outra pessoa já
+  // passou dela. Sempre 1 linha só (como whatsapp/imessage), não por msg.
+  if (channel?.type === 'dm') {
+    const myLast = [...list].reverse().find((m) => m.author.id === state.me.id);
+    const theirRead = state.dmReadState.get(channel.id) || 0;
+    if (myLast && theirRead >= myLast.createdAt) {
+      container.append(el('div', { class: 'read-receipt' }, `Visto ${formatTime(theirRead)}`));
+    }
   }
 
   requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
@@ -1603,6 +1636,7 @@ function mountStaticIcons() {
     btnBack: ['chevron-left', 18],
     btnCall: ['phone', 16],
     btnVideoCall: ['video', 16],
+    btnConvSound: ['bell', 16],
     btnBotPanel: ['cpu', 16],
     btnMembers: ['users', 16],
     btnNavToggle: ['sidebar', 17],
@@ -1768,6 +1802,10 @@ function bindUI() {
   $('#callWaitingJoin').addEventListener('click', () => {
     const channel = channelById(state.activeChannelId);
     if (channel) joinVoice(channel);
+  });
+  $('#btnConvSound').addEventListener('click', () => {
+    const channel = channelById(state.activeChannelId);
+    if (channel) openModal(modals.conversationSound(channel));
   });
 
   $('#ringAccept').addEventListener('click', async () => {

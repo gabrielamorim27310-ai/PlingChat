@@ -119,19 +119,21 @@ Com as duas presentes, o desafio aparece no cadastro, no login e na recuperaçã
 
 ---
 
-## 8. Nexy responder com IA de verdade (opcional)
+## 8. Nexy responder com IA de verdade (opcional, de graça)
 
-Sem isso, o Nexy só responde por regras fixas (saudação, "quem é você" etc. — ver `server/bot/commands/fun.js`). Com a chave configurada, ele passa a responder de verdade via Claude (Anthropic) em qualquer DM e quando chamado pelo nome ("nexy") num canal de servidor.
+Sem isso, o Nexy só responde por regras fixas (saudação, "quem é você" etc. — ver `server/bot/commands/fun.js`). Com a chave configurada, ele passa a responder de verdade via [Groq](https://console.groq.com) em qualquer DM e quando chamado pelo nome ("nexy") num canal de servidor.
 
-1. Crie uma conta em [console.anthropic.com](https://console.anthropic.com) e gere uma API key.
+A Groq foi escolhida porque o plano gratuito é de verdade: sem cartão de crédito, sem cobrança por uso, com limite de pedidos por minuto/dia (dá bem pra um bot de servidor). Ela hospeda modelos open-weight (Llama, o `gpt-oss` da própria OpenAI, etc.) no hardware acelerado deles — a resposta sai bem rápida.
+
+1. Crie uma conta em [console.groq.com](https://console.groq.com/keys) e gere uma API key (não pede cartão).
 2. Configure no Render:
 
 | Variável | Valor |
 |---|---|
-| `ANTHROPIC_API_KEY` | a chave gerada |
-| `ANTHROPIC_BOT_MODEL` | opcional — modelo a usar (padrão `claude-opus-5`). Pra um bot de bate-papo casual e alto volume, `claude-haiku-4-5` é bem mais barato/rápido; troque se o custo do Opus pesar. |
+| `GROQ_API_KEY` | a chave gerada |
+| `GROQ_MODEL` | opcional — modelo a usar (padrão `openai/gpt-oss-120b`, o de melhor qualidade disponível de graça lá hoje). Pra mais volume/velocidade em troca de um pouco de qualidade, `llama-3.3-70b-versatile` é outra opção boa. |
 
-Cobra por uso (tokens de entrada/saída) — sem chave configurada, nada é cobrado e o bot segue no modo de sempre. Cada resposta em DM carrega as últimas mensagens da conversa como contexto; menções em canal de servidor são avulsas (sem histórico), pra não misturar o papo alheio do canal.
+Sem chave configurada, nada muda — o bot segue no modo de sempre. Cada resposta em DM carrega as últimas mensagens da conversa como contexto; menções em canal de servidor são avulsas (sem histórico), pra não misturar o papo alheio do canal. Se o limite gratuito da Groq estourar num pico de uso, a chamada falha silenciosamente e cai pro fallback de regras fixas — ninguém vê erro.
 
 ---
 

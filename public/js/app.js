@@ -207,21 +207,29 @@ function setupAuth() {
     error.hidden = okBox.hidden = true;
   }
 
+  // Chegou por um link de workspace de empresa (?org=guildId) -- o e-mail
+  // do domínio certo substitui o convite pessoal (checado de verdade no
+  // servidor; aqui é só pra não travar o formulário atrás de um convite
+  // que a pessoa não tem motivo pra ter).
+  const pendingOrgId = params.get('org');
+
   function applyMode() {
     const isLogin = authMode === 'login';
     $('#fieldUsername').hidden = isLogin;
     $('#fieldUsername').querySelector('input').required = !isLogin;
 
-    const needsInvite = !isLogin && appConfig.signupMode === 'invite';
+    const needsInvite = !isLogin && appConfig.signupMode === 'invite' && !pendingOrgId;
     $('#fieldInvite').hidden = !needsInvite;
     $('#fieldInvite').querySelector('input').required = needsInvite;
 
     $('#authTitle').textContent = isLogin ? 'Que bom te ver de novo!' : 'Criar uma conta';
     $('#authSub').textContent = isLogin
       ? 'Entre para conversar, chamar e jogar com a galera.'
-      : needsInvite
-        ? 'O cadastro é por convite. Use o código que te enviaram.'
-        : 'Leva menos de um minuto. Depois é só chamar a galera.';
+      : pendingOrgId
+        ? 'Cadastre-se com seu e-mail da empresa — sem precisar de convite.'
+        : needsInvite
+          ? 'O cadastro é por convite. Use o código que te enviaram.'
+          : 'Leva menos de um minuto. Depois é só chamar a galera.';
     $('#authSubmit').textContent = isLogin ? 'Entrar' : 'Criar conta';
     $('#authSwitchText').textContent = isLogin ? 'Precisa de uma conta?' : 'Já tem conta?';
     $('#authSwitch').textContent = isLogin ? 'Registre-se' : 'Entrar';
@@ -251,7 +259,7 @@ function setupAuth() {
         password: form.password.value,
         turnstileToken: captcha.token(),
         ...(authMode === 'register'
-          ? { username: form.username.value, inviteCode: form.inviteCode?.value?.trim() || null }
+          ? { username: form.username.value, inviteCode: form.inviteCode?.value?.trim() || null, orgGuildId: pendingOrgId || null }
           : {})
       };
       const data = await api.post(`/auth/${authMode}`, body);
@@ -309,6 +317,8 @@ function setupAuth() {
     if (params.get('cadastro')) {
       authMode = 'register';
       $('#fieldInvite').querySelector('input').value = params.get('cadastro');
+    } else if (pendingOrgId) {
+      authMode = 'register'; // quem chega por link de empresa provavelmente ainda não tem conta
     }
     applyMode();
 

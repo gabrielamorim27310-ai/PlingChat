@@ -609,11 +609,14 @@ async function listAuditLog(guildId, { before = null, limit = 50 } = {}) {
   return out;
 }
 
-/** Emails com esse dominio entram no servidor sozinhos, sem convite. */
-const domainMatches = async (guildId, email) => {
+/** E-mails VERIFICADOS com esse domínio entram no servidor sozinhos, sem
+ * convite -- sem exigir verificação, qualquer um poderia só digitar um
+ * e-mail falso na conta e "provar" que trabalha em qualquer empresa. Toma
+ * o usuário inteiro (não só a string do e-mail) por causa disso. */
+const domainMatches = async (guildId, user) => {
   const domain = (await getSettings(guildId)).org_domain;
-  if (!domain) return false;
-  return String(email || '').toLowerCase().endsWith('@' + domain.toLowerCase());
+  if (!domain || !user?.email || !user.email_verified) return false;
+  return String(user.email).toLowerCase().endsWith('@' + domain.toLowerCase());
 };
 
 /** Notificacoes push (Web Push). Uma linha por dispositivo/navegador inscrito. */

@@ -218,7 +218,7 @@ router.post('/guilds/join', auth.requireAuth, wrap(async (req, res) => {
   if (await store.isBanned(guild.id, req.user.id)) throw new Error('Voce esta banido deste servidor');
   if (await store.getMember(guild.id, req.user.id)) throw new Error('Voce ja esta neste servidor');
   const orgDomain = (await store.getSettings(guild.id)).org_domain;
-  if (orgDomain && !(await store.domainMatches(guild.id, req.user.email))) {
+  if (orgDomain && !(await store.domainMatches(guild.id, req.user))) {
     throw new Error(`Esse servidor é restrito a e-mails @${orgDomain}`);
   }
 
@@ -250,7 +250,7 @@ router.post('/guilds/:id/invite-friend', auth.requireAuth, wrap(async (req, res)
   const orgDomain = (await store.getSettings(guild.id)).org_domain;
   if (orgDomain) {
     const friendUser = await store.getUser(friendId);
-    if (!(await store.domainMatches(guild.id, friendUser?.email))) {
+    if (!(await store.domainMatches(guild.id, friendUser))) {
       throw new Error(`Esse servidor é restrito a e-mails @${orgDomain}`);
     }
   }
@@ -317,8 +317,8 @@ router.post('/guilds/:id/join-by-domain', auth.requireAuth, wrap(async (req, res
   if (!guild) throw new Error('Servidor nao encontrado');
   if (await store.isBanned(guild.id, req.user.id)) throw new Error('Voce esta banido deste servidor');
   if (await store.getMember(guild.id, req.user.id)) throw new Error('Voce ja esta neste servidor');
-  if (!(await store.domainMatches(guild.id, req.user.email))) {
-    throw new Error('Seu e-mail não pertence ao domínio dessa organização');
+  if (!(await store.domainMatches(guild.id, req.user))) {
+    throw new Error('Seu e-mail precisa ser desse domínio e estar verificado pra entrar sozinho.');
   }
 
   await store.addMember(guild.id, req.user.id);

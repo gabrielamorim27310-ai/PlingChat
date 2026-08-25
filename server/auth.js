@@ -35,7 +35,7 @@ function verifyToken(token) {
   }
 }
 
-async function register({ username, email, password, inviteCode }) {
+async function register({ username, email, password, inviteCode, orgGuildId }) {
   username = String(username || '').trim();
   email = String(email || '').trim().toLowerCase();
 
@@ -45,13 +45,23 @@ async function register({ username, email, password, inviteCode }) {
   if (await store.getUserByEmail(email)) throw new Error('Ja existe uma conta com este e-mail');
   if (await store.usernameTaken(username)) throw new Error('Esse nome de usuario ja esta em uso. Escolha outro.');
 
-  // Valida o convite antes de criar qualquer coisa.
-  await invites.assertUsable(inviteCode);
+  // Chegando por um link de workspace de empresa (?org=) com e-mail do
+  // mesmo dominio dispensa o convite pessoal -- a barreira de verdade
+  // (e-mail VERIFICADO) e conferida depois, no join-by-domain em si;
+  // aqui e so pra nao travar o cadastro atras de um convite que a pessoa
+  // nao tem motivo pra ter.
+  let bypassInvite = false;
+  if (orgGuildId) {
+    const orgGuild = await store.getGuild(String(orgGuildId));
+    const orgDomain = orgGuild ? (await store.getSettings(orgGuild.id)).org_domain : null;
+    bypassInvite = !!orgDomain && email.endsWith('@' + orgDomain.toLowerCase());
+  }
+  if (!bypassInvite) await invites.assertUsable(inviteCode);
 
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await store.createUser({ username, email, passwordHash });
 
-  if (!(await invites.isOpen())) {
+  if (!bypassInvite && !(await invites.isOpen())) {
     const code = await invites.consume(inviteCode, user.id);
     // O convite ja vem com amizade: quem convidou e quem chegou nao precisam
     // se pedir amizade depois, ja se conhecem.

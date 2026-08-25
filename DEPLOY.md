@@ -137,7 +137,22 @@ Sem chave configurada, nada muda — o bot segue no modo de sempre. Cada respost
 
 ---
 
-## 9. Antes de abrir para outras pessoas
+## 9. Música via SoundCloud (futuro, quando tiver orçamento)
+
+Hoje `!tocar <url>` só aceita link direto de áudio (`.mp3`, `.ogg`, `.m4a`, `.wav`) ou stream de rádio — ver `server/bot/commands/music.js`. Buscar e tocar música do SoundCloud por nome fica pra quando fizer sentido gastar com isso. Anotado aqui pra não perder o que precisa:
+
+1. **Custo real**: a API do SoundCloud hoje só libera credenciais (Client ID/Secret) pra quem tem assinatura **Artist Pro** ativa — US$ 8,25/mês ou US$ 99/ano. Sem isso não dá nem pra registrar o app. Confirmado direto na documentação oficial deles em [developers.soundcloud.com/docs/api/register-app](https://developers.soundcloud.com/docs/api/register-app).
+2. **Termos de uso**: toda faixa tocada via API precisa creditar visivelmente quem subiu o áudio e a própria SoundCloud, com link de volta pro `soundcloud.com`. Extrair a URL do stream pra usar fora do fluxo oficial deles ("stream ripping") é proibido — não dá pra só pegar o link e jogar num `<audio src>` cru como o player atual faz.
+3. **O que muda no código, quando chegar a hora**:
+   - `server/bot/commands/music.js`: `!tocar` passa a aceitar um termo de busca (não só URL) — busca na API do SoundCloud, resolve a faixa, e passa a tocar via elemento de áudio/widget deles em vez do `<audio src>` direto atual (ver termo 2 acima).
+   - Variáveis novas: `SOUNDCLOUD_CLIENT_ID` / `SOUNDCLOUD_CLIENT_SECRET`.
+   - Client ID/Secret se pegam depois de assinar o Artist Pro, em [developers.soundcloud.com](https://developers.soundcloud.com) (tem até uma ferramenta de linha de comando deles, `sc-api-auth.mjs`, que abre o navegador e devolve as credenciais direto no terminal).
+
+Enquanto isso, `!tocar` continua exatamente como está — funciona, é de graça, só não busca por nome.
+
+---
+
+## 10. Antes de abrir para outras pessoas
 
 - **Servidor TURN.** Hoje só há STUN público. Duas pessoas atrás de NAT restrito (4G, redes corporativas) podem não conseguir fechar a conexão de voz/vídeo. Um TURN (coturn próprio, Twilio, Metered) resolve; a lista fica em `ICE_SERVERS`, no topo de `public/js/voice.js`.
 - **Escala da malha de voz.** A conexão é ponto a ponto entre todos os participantes: cada pessoa envia sua mídia para todas as outras. Funciona bem até ~6 pessoas por canal. Acima disso, o caminho é um SFU (mediasoup, LiveKit, Janus).

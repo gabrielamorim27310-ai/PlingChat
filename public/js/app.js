@@ -1,6 +1,6 @@
 import { api, token } from './api.js';
 import { API_BASE } from './config.js';
-import { $, el, icon, avatarNode, renderMarkdown, formatTime, formatDay, dayKey, initials, debounce } from './util.js';
+import { $, $$, el, icon, avatarNode, renderMarkdown, formatTime, formatDay, dayKey, initials, debounce } from './util.js';
 import { VoiceClient } from './voice.js';
 import { openModal, closeModal, modals } from './modals.js';
 import {
@@ -1467,6 +1467,29 @@ function renderMembers() {
 
 const rankOf = (role) => ({ owner: 3, admin: 2, mod: 1, member: 0 }[role] || 0);
 
+/** Botãozinho de volume que abre um slider (0% a 200%) -- fica num canto
+ * do tile de cada outra pessoa na chamada, nunca no seu próprio. */
+function volumeControl(userId) {
+  const pct = Math.round(getUserVolume(userId) * 100);
+  const label = el('span', { class: 'tile-volume-label' }, `${pct}%`);
+  const slider = el('input', { type: 'range', min: '0', max: '200', value: String(pct), class: 'tile-volume-slider' });
+  const panel = el('div', { class: 'tile-volume-panel', hidden: true }, slider, label);
+  const btn = el('button', {
+    type: 'button', class: 'tile-volume-btn', title: 'Volume desta pessoa',
+    onclick: (e) => { e.stopPropagation(); panel.hidden = !panel.hidden; }
+  }, icon('volume', 13));
+
+  slider.addEventListener('input', () => {
+    const value = Number(slider.value) / 100;
+    label.textContent = `${slider.value}%`;
+    setUserVolume(userId, value);
+    applyUserVolume(userId, value);
+  });
+  slider.addEventListener('click', (e) => e.stopPropagation());
+
+  return el('div', { class: 'tile-volume' }, btn, panel);
+}
+
 /* ============================================================== voz ===== */
 
 export async function joinVoice(channel, { video = false, ring = false } = {}) {
@@ -1542,7 +1565,8 @@ function renderStage() {
         node = el('div', { class: `tile${kind === 'screen' ? ' screen' : ''}`, dataset: { tile: key } },
           el('video', { autoplay: true, playsInline: true, muted: tile.self }),
           el('div', { class: 'tile-name' }, `${tile.user?.username ?? ''}`),
-          kind === 'screen' ? el('div', { class: 'tile-tag' }, icon('monitor', 12), 'tela') : null);
+          kind === 'screen' ? el('div', { class: 'tile-tag' }, icon('monitor', 12), 'tela') : null,
+          (!tile.self && kind === 'cam') ? volumeControl(tile.user?.id) : null);
         grid.append(node);
       }
       const video = node.querySelector('video');
@@ -1559,7 +1583,8 @@ function renderStage() {
       if (!node) {
         node = el('div', { class: 'tile', dataset: { tile: key } },
           el('div', { class: 'tile-avatar' }, avatarNode(tile.user, { size: 84, status: false })),
-          el('div', { class: 'tile-name' }, tile.user?.username ?? ''));
+          el('div', { class: 'tile-name' }, tile.user?.username ?? ''),
+          !tile.self ? volumeControl(tile.user?.id) : null);
         grid.append(node);
       }
       node.classList.toggle('speaking', !!tile.speaking);
@@ -1610,18 +1635,61 @@ export function applyAudioOutput(mediaEl) {
   mediaEl.setSinkId(sinkId).catch(() => { /* dispositivo pode ter sumido -- ignora */ });
 }
 
+/* -------------------------------------------- volume por pessoa na call -- */
+// <audio>.volume sozinho não passa de 100% -- pra "aumentar o áudio de
+// alguém" de verdade (acima do normal) precisa passar o som por um
+// GainNode do Web Audio. Preferência fica salva por pessoa (não por
+// chamada), então já volta aplicada da próxima vez que ela falar de novo.
+const VOLUME_KEY_PREFIX = 'nexus.volume.';
+export const getUserVolume = (userId) => {
+  try {
+    const v = parseFloat(localStorage.getItem(VOLUME_KEY_PREFIX + userId));
+    return Number.isFinite(v) ? v : 1;
+  } catch { return 1; }
+};
+export const setUserVolume = (userId, value) => {
+  try { localStorage.setItem(VOLUME_KEY_PREFIX + userId, String(value)); } catch { /* ignora */ }
+};
+
+let audioCtx = null;
+let lastAppliedSinkId = '';
+const gainNodes = new Map(); // streamId -> { gain: GainNode, userId }
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+/** Muda o ganho ao vivo, sem esperar o próximo syncAudio() -- é o que o
+ * slider chama a cada arrasto. */
+export function applyUserVolume(userId, value) {
+  for (const node of gainNodes.values()) {
+    if (node.userId === userId) node.gain.gain.value = value;
+  }
+}
+
 /** Reproduz o áudio remoto fora da grade (funciona mesmo sem vídeo). */
 function syncAudio() {
   const sink = $('#audioSink');
-  const wanted = new Map();
+  const wanted = new Map(); // streamId -> { stream, userId }
 
   for (const peer of voice?.peers.values() || []) {
     for (const [streamId, stream] of peer.streams) {
-      if (stream.getAudioTracks().length) wanted.set(streamId, stream);
+      if (stream.getAudioTracks().length) wanted.set(streamId, { stream, userId: peer.user?.id });
     }
   }
 
-  for (const [streamId, stream] of wanted) {
+  // Saída de áudio agora é escolhida no AudioContext (todo áudio remoto
+  // passa por ele pro ganho funcionar) -- só reaplica quando o dispositivo
+  // escolhido realmente muda, pra não dar uma piscada de áudio à toa.
+  const ctx = wanted.size ? getAudioCtx() : audioCtx;
+  const sinkId = voice?.deviceIds?.audioOutput || '';
+  if (ctx && typeof ctx.setSinkId === 'function' && sinkId !== lastAppliedSinkId) {
+    lastAppliedSinkId = sinkId;
+    ctx.setSinkId(sinkId || '').catch(() => { /* dispositivo pode ter sumido -- ignora */ });
+  }
+
+  for (const [streamId, { stream, userId }] of wanted) {
     let audio = sink.querySelector(`[data-stream="${streamId}"]`);
     if (!audio) {
       audio = el('audio', { autoplay: true, dataset: { stream: streamId } });
@@ -1629,12 +1697,29 @@ function syncAudio() {
     }
     if (audio.srcObject !== stream) audio.srcObject = stream;
     audio.muted = !!voice.state.deafened;
-    applyAudioOutput(audio);
     audio.play?.().catch(() => { /* aguarda gesto do usuário */ });
+
+    if (!gainNodes.has(streamId)) {
+      try {
+        const source = ctx.createMediaElementSource(audio);
+        const gain = ctx.createGain();
+        source.connect(gain).connect(ctx.destination);
+        gainNodes.set(streamId, { gain, userId });
+      } catch {
+        // Se o navegador recusar (raro), o <audio> ainda toca no volume
+        // normal por conta própria -- só o boost acima de 100% não funciona.
+      }
+    }
+    const node = gainNodes.get(streamId);
+    if (node) node.gain.gain.value = userId ? getUserVolume(userId) : 1;
   }
 
   for (const audio of [...sink.querySelectorAll('audio[data-stream]')]) {
-    if (!wanted.has(audio.dataset.stream)) audio.remove();
+    if (!wanted.has(audio.dataset.stream)) {
+      gainNodes.get(audio.dataset.stream)?.gain.disconnect();
+      gainNodes.delete(audio.dataset.stream);
+      audio.remove();
+    }
   }
 }
 
@@ -2030,6 +2115,13 @@ function bindUI() {
   // onmousedown:preventDefault pra não disparar isso antes do clique valer).
   document.addEventListener('click', (event) => {
     if (mention && !$('#mentionMenu').contains(event.target) && event.target !== input) closeMentionMenu();
+  });
+  // Fecha qualquer slider de volume aberto ao clicar fora dele -- um só
+  // listener pra todos os tiles (eles vêm e vão conforme gente entra/sai
+  // da chamada, então cada um ter o próprio listener vazaria memória).
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('.tile-volume')) return;
+    for (const panel of $$('.tile-volume-panel')) panel.hidden = true;
   });
 
   $('#composer').addEventListener('submit', (event) => {

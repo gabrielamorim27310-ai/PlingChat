@@ -457,6 +457,20 @@ button { background: none; border: 0; cursor: pointer; }
 .tile .tile-avatar { display: grid; place-items: center; }
 .tile .tile-name { position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,.65); padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
 .tile .tile-tag { position: absolute; right: 8px; top: 8px; background: rgba(0,0,0,.6); padding: 3px 8px; border-radius: 5px; font-size: 11px; display: flex; align-items: center; gap: 4px; }
+
+.tile-volume { position: absolute; right: 8px; bottom: 8px; }
+.tile-volume-btn {
+  width: 26px; height: 26px; border-radius: 50%; background: rgba(0,0,0,.65); color: #fff;
+  display: grid; place-items: center; transition: background .12s;
+}
+.tile-volume-btn:hover { background: rgba(0,0,0,.85); }
+.tile-volume-panel {
+  position: absolute; right: 0; bottom: 32px; background: var(--bg-3); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; gap: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35); white-space: nowrap;
+}
+.tile-volume-slider { width: 110px; accent-color: var(--brand); }
+.tile-volume-label { font-family: var(--font-mono); font-size: 11px; color: var(--text-mute); min-width: 34px; text-align: right; }
 #stage.is-fullscreen { height: 100vh; max-height: none; border-bottom: 0; }
 #stage.is-fullscreen .stage-grid { padding: 24px; }
 .stage-bar { display: flex; gap: 8px; justify-content: center; padding: 10px; background: var(--bg-1); flex-wrap: wrap; }

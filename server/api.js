@@ -173,6 +173,7 @@ router.get('/bootstrap', auth.requireAuth, wrap(async (req, res) => {
     });
   }
   const botUser = await store.getUser(botModule.BOT_ID);
+  await botModule.ensureWelcomeDM(req.user.id);
   res.json({
     user: store.publicUser(req.user),
     guilds: fullGuilds,

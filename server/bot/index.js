@@ -78,6 +78,25 @@ async function say(channelId, content, embed = null) {
 bot.say = say;
 bot.embed = (opts) => ({ color: COLORS.brand, ...opts });
 
+/** Garante que todo mundo já tenha uma conversa com o Nexy pronta -- ele é
+ * pra ser sempre acessível, tipo o Meta AI dentro do WhatsApp, não algo
+ * que a pessoa precisa descobrir ou adicionar. Manda um "oi" só na
+ * primeira vez (chamado a cada bootstrap, então tem que ser barato). */
+async function ensureWelcomeDM(userId) {
+  if (!userId || userId === BOT_ID) return null;
+  const channel = await store.getOrCreateDM(userId, BOT_ID);
+  const existing = await store.listMessages(channel.id, { limit: 1 });
+  if (!existing.length) {
+    await say(channel.id, '', {
+      color: COLORS.brand,
+      title: '👋 Oi! Eu sou o Nexy',
+      description: 'Pode falar comigo aqui a qualquer hora — bater papo, tirar dúvida, o que precisar. Também tenho comandos de servidor, digite `!ajuda` pra ver.'
+    });
+  }
+  return channel;
+}
+bot.ensureWelcomeDM = ensureWelcomeDM;
+
 /* ------------------------------------------------------------ permissoes */
 
 const RANKS = store.ROLE_RANK;
@@ -388,5 +407,5 @@ async function initBot({ deliver }) {
 module.exports = {
   bot, BOT_ID, COLORS,
   initBot, handleMessage, say, onMemberJoin, onMemberLeave,
-  ensureBotUser, resolveCommand, grantXP, xpForLevel, hasRank, logAction, newId
+  ensureBotUser, ensureWelcomeDM, resolveCommand, grantXP, xpForLevel, hasRank, logAction, newId
 };

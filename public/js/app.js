@@ -816,7 +816,14 @@ function renderSidebar() {
         el('span', {}, 'Mensagens diretas'),
         el('button', { title: 'Nova conversa', onclick: () => openModal(modals.addFriend()) }, '+'))));
 
-    for (const dm of state.dms) {
+    // O Nexy fica sempre fixo no topo -- é pra ser tão acessível quanto o
+    // Meta AI dentro do WhatsApp, não uma conversa que pode afundar na
+    // lista conforme chegam mensagens de outras pessoas.
+    const sortedDms = [...state.dms].sort((a, b) =>
+      (b.recipient?.id === state.botUser?.id) - (a.recipient?.id === state.botUser?.id));
+
+    for (const dm of sortedDms) {
+      const isNexy = dm.recipient?.id === state.botUser?.id;
       const unread = state.unread[dm.id] || 0;
       const voiceHere = state.voiceMembers.get(dm.id) || [];
       const waiting = voiceHere.length > 0 && !voiceHere.some((m) => m.user.id === state.me.id);
@@ -827,6 +834,7 @@ function renderSidebar() {
       },
         avatarNode(dm.recipient, { size: 24 }),
         el('span', { class: 'name' }, dm.recipient?.username || 'Desconhecido'),
+        isNexy ? el('span', { class: 'ia-badge' }, 'IA') : null,
         waiting ? el('span', { class: 'call-badge' }, icon('phone', 11)) : null,
         unread ? el('span', { class: `badge ${state.mentioned.has(dm.id) ? 'mentioned' : ''}` }, unread) : null));
     }
